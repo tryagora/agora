@@ -9,5 +9,13 @@ port = 6167
 max_request_size = 20971520
 allow_registration = true
 allow_federation = false
+allow_encryption = true
 allow_check_for_updates = false
 trusted_servers = []
+
+# logging
+log = "info,rocket=off,_=off,hyper=off,rustls=off"
+
+# media
+max_concurrent_requests = 100
+media_storage_path = "/var/lib/matrix-conduit/media"
