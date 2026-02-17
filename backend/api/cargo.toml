@@ -1,0 +1,23 @@
+[package]
+name = "agora-api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = { version = "0.7", features = ["ws"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+sqlx = { version = "0.7", features = ["runtime-tokio", "tls-rustls", "postgres"] }
+redis = { version = "0.24", features = ["tokio-comp"] }
+anyhow = "1.0"
+config = "0.14"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.6", features = ["v4", "serde"] }
+
+[dev-dependencies]
+reqwest = { version = "0.11", features = ["json"] }

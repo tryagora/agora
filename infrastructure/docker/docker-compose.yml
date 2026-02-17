@@ -1,0 +1,65 @@
+version: "3.8"
+
+services:
+  conduit:
+    image: docker.io/matrixconduit/matrix-conduit:v0.7.0
+    container_name: conduit
+    restart: unless-stopped
+    ports:
+      - 8448:6167
+    volumes:
+      - conduit-data:/var/lib/matrix-conduit
+      - ./conduit.toml:/etc/conduit.toml:ro
+    environment:
+      CONDUIT_CONFIG: /etc/conduit.toml
+    networks:
+      - agora
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: agora_postgres
+    restart: unless-stopped
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: agora
+      POSTGRES_PASSWORD: agora_dev_password
+      POSTGRES_DB: agora
+    ports:
+      - 5432:5432
+    networks:
+      - agora
+
+  redis:
+    image: redis:7-alpine
+    container_name: agora_redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    ports:
+      - 6379:6379
+    networks:
+      - agora
+
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: agora_livekit
+    restart: unless-stopped
+    command: --config /etc/livekit.yaml
+    ports:
+      - 7880:7880
+      - 7881:7881
+      - 7882:7882/udp
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    networks:
+      - agora
+
+volumes:
+  conduit-data:
+  postgres-data:
+  redis-data:
+
+networks:
+  agora:
+    driver: bridge

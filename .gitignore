@@ -1,0 +1,39 @@
+# dependencies
+/target
+node_modules/
+*.lock
+
+# build artifacts
+dist/
+build/
+*.wasm
+
+# environment
+.env
+.env.local
+.env.*.local
+
+# ide
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# os
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
+logs/
+
+# database
+*.db
+*.db-journal
+
+# misc
+*.tmp
+.cache/
+temp/
+status.md

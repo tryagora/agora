@@ -1,0 +1,13 @@
+# conduit configuration
+# see: https://docs.conduit.rs/configuration.html
+
+[global]
+server_name = "localhost"
+database_path = "/var/lib/matrix-conduit/conduit.db"
+database_backend = "rocksdb"
+port = 6167
+max_request_size = 20971520
+allow_registration = true
+allow_federation = false
+allow_check_for_updates = false
+trusted_servers = []
