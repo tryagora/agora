@@ -51,5 +51,6 @@ fn router() -> Router<Arc<AppState>> {
     Router::new()
         .merge(routes::health::router())
         .merge(routes::auth::router())
+        .merge(routes::rooms::router())
         .merge(routes::sync::router())
 }

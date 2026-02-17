@@ -6,12 +6,14 @@ a free open-source federated discord-like communication platform
 
 - **homeserver**: [conduit](https://conduit.rs) (matrix)
 - **voice/video**: [livekit](https://livekit.io)
-- **mobile/desktop**: [tauri](https://tauri.app) with flutter
+- **mobile/desktop**: [tauri](https://tauri.app)
 - **web client**: [next.js](https://nextjs.org)
 - **custom api**: [axum](https://github.com/tokio-rs/axum) (rust)
 - **database**: postgresql
 - **pubsub/presence**: redis
 - **reverse proxy**: traefik
+
+why tauri and conduit? [i like rust (noad)](https://i.programmerhumor.io/2025/03/6470ea3ae0528d805bbf218d40a71d60.jpeg)
 
 ## development
 

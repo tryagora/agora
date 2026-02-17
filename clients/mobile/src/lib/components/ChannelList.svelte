@@ -14,7 +14,7 @@
 		accessToken: string;
 		serverId: string | null;
 		selectedChannelId: string | null;
-		onSelectChannel: (channelId: string) => void;
+		onSelectChannel: (channelId: string, channelName?: string) => void;
 	}
 
 	let { accessToken, serverId, selectedChannelId, onSelectChannel }: Props = $props();
@@ -37,12 +37,15 @@
 			loading = true;
 			error = '';
 			
-			const response = await fetch(`${API_URL}/rooms?access_token=${accessToken}`);
+			// fetch children of the selected space/server
+			const params = new URLSearchParams({
+				access_token: accessToken,
+				space_id: serverId
+			});
+			const response = await fetch(`${API_URL}/rooms/children?${params}`);
 			if (response.ok) {
 				const data = await response.json();
-				// filter channels - for now show non-space rooms
-				// in real implementation, we'd filter by parent space
-				channels = data.rooms.filter((r: Channel) => !r.is_space);
+				channels = data.children || [];
 			} else {
 				error = 'failed to load channels';
 			}
@@ -54,7 +57,7 @@
 	}
 
 	async function handleCreateChannel() {
-		if (!newChannelName.trim()) return;
+		if (!newChannelName.trim() || !serverId) return;
 		
 		try {
 			const response = await fetch(`${API_URL}/rooms/create`, {
@@ -63,7 +66,8 @@
 				body: JSON.stringify({
 					access_token: accessToken,
 					name: newChannelName,
-					is_space: false
+					is_space: false,
+					parent_space_id: serverId
 				})
 			});
 			
@@ -81,6 +85,8 @@
 
 	// load channels when server changes
 	$effect(() => {
+		// track serverId so effect re-runs when it changes
+		const _id = serverId;
 		loadChannels();
 	});
 
@@ -112,7 +118,7 @@
 						class="w-full text-left px-3 py-2 rounded text-slate-300 hover:bg-slate-700 hover:text-white transition-colors flex items-center gap-2"
 						class:bg-slate-700={selectedChannelId === channel.room_id}
 						class:text-white={selectedChannelId === channel.room_id}
-						onclick={() => onSelectChannel(channel.room_id)}
+						onclick={() => onSelectChannel(channel.room_id, channel.name || undefined)}
 					>
 						<span class="text-slate-500">{getChannelIcon()}</span>
 						<span class="truncate">{channel.name || 'unnamed'}</span>

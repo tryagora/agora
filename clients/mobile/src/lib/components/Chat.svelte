@@ -1,15 +1,17 @@
 <script lang="ts">
 	import ServerList from './ServerList.svelte';
 	import ChannelList from './ChannelList.svelte';
+	import MemberList from './MemberList.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
+
 
 	interface Message {
 		room_id: string;
 		sender: string;
 		content: string;
 		timestamp?: number;
+		event_id?: string;
 	}
 
 	interface Props {
@@ -24,11 +26,13 @@
 	let newMessage = $state('');
 	let selectedServerId = $state<string | null>(null);
 	let selectedChannelId = $state<string | null>(null);
+	let selectedChannelName = $state<string | null>(null);
 	let nextBatch = $state('');
 	let loading = $state(false);
 	let error = $state('');
 	let showCreateServerDialog = $state(false);
 	let newServerName = $state('');
+	let messagesContainer: HTMLDivElement;
 
 	const API_URL = 'http://localhost:3000';
 
@@ -44,7 +48,14 @@
 				const data = await response.json();
 				nextBatch = data.next_batch;
 				if (data.messages && data.messages.length > 0) {
-					messages = [...messages, ...data.messages];
+					// deduplicate by event_id
+					const existingIds = new Set(messages.map(m => m.event_id).filter(Boolean));
+					const newMessages = data.messages.filter(
+						(m: Message) => !m.event_id || !existingIds.has(m.event_id)
+					);
+					if (newMessages.length > 0) {
+						messages = [...messages, ...newMessages];
+					}
 				}
 			}
 		} catch (e) {
@@ -59,14 +70,22 @@
 		error = '';
 		
 		try {
-			// for now, just add to local messages
-			messages = [...messages, {
-				room_id: selectedChannelId,
-				sender: userId,
-				content: newMessage,
-				timestamp: Date.now()
-			}];
-			newMessage = '';
+			const response = await fetch(`${API_URL}/rooms/send`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					access_token: accessToken,
+					room_id: selectedChannelId,
+					content: newMessage
+				})
+			});
+			
+			if (response.ok) {
+				newMessage = '';
+				// message will appear on next sync cycle
+			} else {
+				error = 'failed to send message';
+			}
 		} catch (e) {
 			error = 'failed to send message';
 		} finally {
@@ -104,8 +123,9 @@
 		selectedChannelId = null;
 	}
 
-	function handleSelectChannel(channelId: string) {
+	function handleSelectChannel(channelId: string, channelName?: string) {
 		selectedChannelId = channelId;
+		selectedChannelName = channelName || null;
 	}
 
 	// poll for new messages every 5 seconds
@@ -126,6 +146,16 @@
 			? messages.filter(m => m.room_id === selectedChannelId)
 			: messages
 	);
+
+	// auto-scroll to bottom when new messages arrive
+	$effect(() => {
+		const _len = channelMessages.length;
+		if (messagesContainer) {
+			requestAnimationFrame(() => {
+				messagesContainer.scrollTop = messagesContainer.scrollHeight;
+			});
+		}
+	});
 </script>
 
 <div class="flex h-screen w-screen bg-slate-900">
@@ -146,14 +176,15 @@
 		onSelectChannel={handleSelectChannel}
 	/>
 
-	<!-- chat area -->
+	<!-- chat area + member list -->
+	<div class="flex-1 flex min-h-0">
 	<div class="flex-1 flex flex-col min-h-0">
 		<!-- header -->
 		<div class="h-14 border-b border-slate-700 flex items-center justify-between px-4 bg-slate-800">
 			<div>
-				{#if selectedChannelId}
-					<span class="text-slate-500">#</span>
-					<span class="font-semibold text-white ml-1">channel</span>
+			{#if selectedChannelId}
+				<span class="text-slate-500">#</span>
+				<span class="font-semibold text-white ml-1">{selectedChannelName || 'channel'}</span>
 				{:else}
 					<span class="text-slate-400">select a channel</span>
 				{/if}
@@ -167,13 +198,13 @@
 		</div>
 
 		<!-- messages -->
-		<div class="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+		<div class="flex-1 overflow-y-auto p-4 space-y-3 min-h-0" bind:this={messagesContainer}>
 			{#if channelMessages.length === 0}
 				<p class="text-slate-500 text-center mt-8">
 					{selectedChannelId ? 'no messages yet' : 'select a channel to view messages'}
 				</p>
 			{:else}
-				{#each channelMessages as message (message.timestamp)}
+				{#each channelMessages as message, i (message.event_id || `local-${i}-${message.timestamp}`)}
 					<div class="space-y-1">
 						<div class="flex items-center gap-2">
 							<span class="font-semibold text-sm text-white">{message.sender}</span>
@@ -210,6 +241,15 @@
 				</Button>
 			</div>
 		</div>
+	</div>
+
+	<!-- member list -->
+	{#if selectedChannelId}
+		<MemberList
+			{accessToken}
+			channelId={selectedChannelId}
+		/>
+	{/if}
 	</div>
 
 	<!-- create server dialog -->

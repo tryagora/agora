@@ -103,6 +103,17 @@ pub struct Event {
     pub origin_server_ts: Option<i64>,
 }
 
+// encode a matrix identifier for use in url paths
+// preserves sigils (!, #, @) and colon (:) that matrix ids require
+fn encode_matrix_id(id: &str) -> String {
+    id.replace('%', "%25")
+        .replace(' ', "%20")
+        .replace('?', "%3F")
+        .replace('&', "%26")
+        .replace('{', "%7B")
+        .replace('}', "%7D")
+}
+
 impl MatrixClient {
     pub fn new(homeserver_url: String) -> Self {
         Self {
@@ -256,7 +267,7 @@ impl MatrixClient {
         let url = format!(
             "{}/_matrix/client/r0/rooms/{}/send/m.room.message/{}",
             self.homeserver_url,
-            urlencoding::encode(&room_id),
+            encode_matrix_id(&room_id),
             txn_id
         );
         
@@ -280,6 +291,275 @@ impl MatrixClient {
             Err(MatrixError::ApiError(error_text))
         }
     }
+
+    // server/room management
+    pub async fn create_room(
+        &self,
+        name: String,
+        topic: Option<String>,
+        is_space: bool,
+    ) -> Result<CreateRoomResponse, MatrixError> {
+        let token = self.access_token.as_ref()
+            .ok_or(MatrixError::NoSession)?;
+        
+        let client = reqwest::Client::new();
+        let url = format!("{}/_matrix/client/r0/createRoom", self.homeserver_url);
+        
+        let mut body = serde_json::json!({
+            "name": name,
+            "preset": "public_chat",
+            "room_version": "9"
+        });
+        
+        if let Some(t) = topic {
+            body["topic"] = serde_json::Value::String(t);
+        }
+        
+        if is_space {
+            body["creation_content"] = serde_json::json!({
+                "type": "m.space"
+            });
+        }
+
+        let response = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .json(&body)
+            .send()
+            .await?;
+        
+        if response.status().is_success() {
+            let result = response.json::<CreateRoomResponse>().await?;
+            Ok(result)
+        } else {
+            let error_text = response.text().await?;
+            Err(MatrixError::ApiError(error_text))
+        }
+    }
+
+    pub async fn join_room(
+        &self,
+        room_id_or_alias: String,
+    ) -> Result<JoinRoomResponse, MatrixError> {
+        let token = self.access_token.as_ref()
+            .ok_or(MatrixError::NoSession)?;
+        
+        let client = reqwest::Client::new();
+        let url = format!(
+            "{}/_matrix/client/r0/join/{}",
+            self.homeserver_url,
+            encode_matrix_id(&room_id_or_alias)
+        );
+
+        let response = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .json(&serde_json::json!({}))
+            .send()
+            .await?;
+        
+        if response.status().is_success() {
+            let result = response.json::<JoinRoomResponse>().await?;
+            Ok(result)
+        } else {
+            let error_text = response.text().await?;
+            Err(MatrixError::ApiError(error_text))
+        }
+    }
+
+    pub async fn get_joined_rooms(&self) -> Result<JoinedRoomsResponse, MatrixError> {
+        let token = self.access_token.as_ref()
+            .ok_or(MatrixError::NoSession)?;
+        
+        let client = reqwest::Client::new();
+        let url = format!("{}/_matrix/client/r0/joined_rooms", self.homeserver_url);
+
+        let response = client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await?;
+        
+        if response.status().is_success() {
+            let result = response.json::<JoinedRoomsResponse>().await?;
+            Ok(result)
+        } else {
+            let error_text = response.text().await?;
+            Err(MatrixError::ApiError(error_text))
+        }
+    }
+
+    pub async fn get_room_members(
+        &self,
+        room_id: String,
+    ) -> Result<RoomMembersResponse, MatrixError> {
+        let token = self.access_token.as_ref()
+            .ok_or(MatrixError::NoSession)?;
+        
+        let client = reqwest::Client::new();
+        let url = format!(
+            "{}/_matrix/client/r0/rooms/{}/members",
+            self.homeserver_url,
+            encode_matrix_id(&room_id)
+        );
+
+        let response = client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await?;
+        
+        if response.status().is_success() {
+            let result = response.json::<RoomMembersResponse>().await?;
+            Ok(result)
+        } else {
+            let error_text = response.text().await?;
+            Err(MatrixError::ApiError(error_text))
+        }
+    }
+
+    pub async fn get_room_state(
+        &self,
+        room_id: String,
+    ) -> Result<Vec<RoomStateEvent>, MatrixError> {
+        let token = self.access_token.as_ref()
+            .ok_or(MatrixError::NoSession)?;
+        
+        let client = reqwest::Client::new();
+        let url = format!(
+            "{}/_matrix/client/r0/rooms/{}/state",
+            self.homeserver_url,
+            encode_matrix_id(&room_id)
+        );
+
+        let response = client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await?;
+        
+        if response.status().is_success() {
+            let result = response.json::<Vec<RoomStateEvent>>().await?;
+            Ok(result)
+        } else {
+            let error_text = response.text().await?;
+            Err(MatrixError::ApiError(error_text))
+        }
+    }
+
+    // add a room as a child of a space (m.space.child state event)
+    pub async fn add_space_child(
+        &self,
+        space_id: String,
+        child_room_id: String,
+    ) -> Result<(), MatrixError> {
+        let token = self.access_token.as_ref()
+            .ok_or(MatrixError::NoSession)?;
+        
+        let client = reqwest::Client::new();
+        let url = format!(
+            "{}/_matrix/client/r0/rooms/{}/state/m.space.child/{}",
+            self.homeserver_url,
+            encode_matrix_id(&space_id),
+            encode_matrix_id(&child_room_id)
+        );
+        
+        let body = serde_json::json!({
+            "via": ["localhost"]
+        });
+
+        let response = client
+            .put(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .json(&body)
+            .send()
+            .await?;
+        
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let error_text = response.text().await?;
+            Err(MatrixError::ApiError(error_text))
+        }
+    }
+
+    pub async fn invite_user(
+        &self,
+        room_id: String,
+        user_id: String,
+    ) -> Result<(), MatrixError> {
+        let token = self.access_token.as_ref()
+            .ok_or(MatrixError::NoSession)?;
+        
+        let client = reqwest::Client::new();
+        let url = format!(
+            "{}/_matrix/client/r0/rooms/{}/invite",
+            self.homeserver_url,
+            encode_matrix_id(&room_id)
+        );
+        
+        let body = serde_json::json!({
+            "user_id": user_id
+        });
+
+        let response = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .json(&body)
+            .send()
+            .await?;
+        
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let error_text = response.text().await?;
+            Err(MatrixError::ApiError(error_text))
+        }
+    }
+}
+
+// room/server response types
+#[derive(Debug, Deserialize)]
+pub struct CreateRoomResponse {
+    #[serde(rename = "room_id")]
+    pub room_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct JoinRoomResponse {
+    #[serde(rename = "room_id")]
+    pub room_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct JoinedRoomsResponse {
+    #[serde(rename = "joined_rooms")]
+    pub joined_rooms: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RoomMembersResponse {
+    #[serde(rename = "chunk")]
+    pub members: Vec<RoomMember>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RoomMember {
+    #[serde(rename = "user_id")]
+    pub user_id: String,
+    #[serde(rename = "displayname")]
+    pub display_name: Option<String>,
+    #[serde(rename = "avatar_url")]
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RoomStateEvent {
+    #[serde(rename = "type")]
+    pub event_type: String,
+    pub state_key: Option<String>,
+    pub content: serde_json::Value,
+    pub sender: String,
 }
 
 #[derive(Debug)]

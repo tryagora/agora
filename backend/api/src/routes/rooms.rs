@@ -16,6 +16,8 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/rooms/join", post(join_room))
         .route("/rooms/members", get(get_room_members))
         .route("/rooms/invite", post(invite_user))
+        .route("/rooms/send", post(send_message))
+        .route("/rooms/children", get(get_space_children))
 }
 
 #[derive(Debug, Deserialize)]
@@ -43,6 +45,7 @@ pub struct CreateRoomRequest {
     pub name: String,
     pub topic: Option<String>,
     pub is_space: Option<bool>,
+    pub parent_space_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -79,6 +82,29 @@ pub struct InviteRequest {
     pub access_token: String,
     pub room_id: String,
     pub user_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SendMessageRequest {
+    pub access_token: String,
+    pub room_id: String,
+    pub content: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SendMessageResponse {
+    pub event_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SpaceChildrenQuery {
+    pub access_token: String,
+    pub space_id: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SpaceChildrenResponse {
+    pub children: Vec<RoomInfo>,
 }
 
 async fn list_joined_rooms(
@@ -153,8 +179,18 @@ async fn create_room(
     let mut matrix = MatrixClient::new(state.homeserver_url.clone());
     matrix.access_token = Some(req.access_token);
 
+    let parent_space_id = req.parent_space_id.clone();
+
     match matrix.create_room(req.name, req.topic, req.is_space.unwrap_or(false)).await {
         Ok(response) => {
+            // if this room has a parent space, add it as a space child
+            if let Some(space_id) = parent_space_id {
+                if let Err(e) = matrix.add_space_child(space_id, response.room_id.clone()).await {
+                    tracing::warn!("failed to add space child relationship: {}", e);
+                    // don't fail the whole request — room was created, just the hierarchy link failed
+                }
+            }
+
             Ok(Json(CreateRoomResponse {
                 room_id: response.room_id,
             }))
@@ -228,4 +264,86 @@ async fn invite_user(
             Err(StatusCode::BAD_REQUEST)
         }
     }
+}
+
+async fn send_message(
+    state: State<Arc<AppState>>,
+    Json(req): Json<SendMessageRequest>,
+) -> Result<Json<SendMessageResponse>, StatusCode> {
+    let mut matrix = MatrixClient::new(state.homeserver_url.clone());
+    matrix.access_token = Some(req.access_token);
+
+    match matrix.send_message(req.room_id, req.content).await {
+        Ok(result) => {
+            let event_id = result
+                .get("event_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            Ok(Json(SendMessageResponse { event_id }))
+        }
+        Err(e) => {
+            tracing::error!("failed to send message: {}", e);
+            Err(StatusCode::BAD_REQUEST)
+        }
+    }
+}
+
+async fn get_space_children(
+    state: State<Arc<AppState>>,
+    Query(params): Query<SpaceChildrenQuery>,
+) -> Result<Json<SpaceChildrenResponse>, StatusCode> {
+    let mut matrix = MatrixClient::new(state.homeserver_url.clone());
+    matrix.access_token = Some(params.access_token.clone());
+
+    // get space state events to find m.space.child entries
+    let state_events = matrix.get_room_state(params.space_id.clone()).await
+        .map_err(|e| {
+            tracing::error!("failed to get space state: {}", e);
+            StatusCode::BAD_REQUEST
+        })?;
+
+    let child_room_ids: Vec<String> = state_events
+        .iter()
+        .filter(|e| e.event_type == "m.space.child")
+        .filter_map(|e| e.state_key.clone())
+        .filter(|key| !key.is_empty())
+        .collect();
+
+    let mut children = Vec::new();
+
+    for room_id in child_room_ids {
+        // fetch each child room's state for name/topic
+        let name = if let Ok(room_state) = matrix.get_room_state(room_id.clone()).await {
+            room_state
+                .iter()
+                .find(|e| e.event_type == "m.room.name")
+                .and_then(|e| e.content.get("name"))
+                .and_then(|v| v.as_str())
+                .map(String::from)
+        } else {
+            None
+        };
+
+        let topic = if let Ok(room_state) = matrix.get_room_state(room_id.clone()).await {
+            room_state
+                .iter()
+                .find(|e| e.event_type == "m.room.topic")
+                .and_then(|e| e.content.get("topic"))
+                .and_then(|v| v.as_str())
+                .map(String::from)
+        } else {
+            None
+        };
+
+        children.push(RoomInfo {
+            room_id,
+            name,
+            topic,
+            is_space: false,
+            member_count: None,
+        });
+    }
+
+    Ok(Json(SpaceChildrenResponse { children }))
 }

@@ -33,6 +33,7 @@ pub struct Message {
     pub sender: String,
     pub content: String,
     pub timestamp: Option<i64>,
+    pub event_id: Option<String>,
 }
 
 async fn sync(
@@ -62,6 +63,7 @@ async fn sync(
                                         sender: event.sender,
                                         content,
                                         timestamp: event.origin_server_ts,
+                                        event_id: event.event_id.clone(),
                                     });
                                 }
                             }
