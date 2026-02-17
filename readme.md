@@ -48,4 +48,4 @@ agora/
 
 ## license
 
-tbd — likely agpl-3.0
+agpl-3.0
