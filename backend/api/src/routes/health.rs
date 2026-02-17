@@ -1,9 +1,11 @@
 use axum::{
+    Router,
     routing::get,
-    router::Router,
 };
+use std::sync::Arc;
+use crate::app_state::AppState;
 
-pub fn router() -> Router {
+pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/health", get(health_check))
 }

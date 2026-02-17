@@ -1,5 +1,5 @@
 # dependencies
-/target
+**/target/
 node_modules/
 *.lock
 

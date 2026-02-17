@@ -2,10 +2,7 @@ pub mod app_state;
 pub mod matrix;
 pub mod routes;
 
-use axum::{
-    Router,
-};
-use std::net::SocketAddr;
+use axum::Router;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
