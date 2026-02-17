@@ -46,7 +46,6 @@ pub struct RegistrationResponse {
     pub user_id: String,
     #[serde(rename = "access_token")]
     pub access_token: String,
-    #[serde(rename = "home_server")]
     pub home_server: Option<String>,
     pub device_id: Option<String>,
 }
@@ -68,6 +67,40 @@ pub struct LoginResponse {
     #[serde(rename = "home_server")]
     pub home_server: Option<String>,
     pub device_id: Option<String>,
+}
+
+// Sync types
+#[derive(Debug, Deserialize)]
+pub struct SyncResponse {
+    #[serde(rename = "next_batch")]
+    pub next_batch: String,
+    pub rooms: Option<Rooms>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Rooms {
+    pub join: Option<std::collections::HashMap<String, JoinedRoom>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct JoinedRoom {
+    pub timeline: Option<Timeline>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Timeline {
+    pub events: Vec<Event>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct Event {
+    #[serde(rename = "type")]
+    pub event_type: String,
+    pub sender: String,
+    pub content: serde_json::Value,
+    #[serde(rename = "event_id")]
+    pub event_id: Option<String>,
+    pub origin_server_ts: Option<i64>,
 }
 
 impl MatrixClient {
@@ -177,6 +210,75 @@ impl MatrixClient {
         
         let login_response = response.json::<LoginResponse>().await?;
         Ok(login_response)
+    }
+
+    pub async fn sync(
+        &self,
+        since: Option<String>,
+    ) -> Result<SyncResponse, MatrixError> {
+        let token = self.access_token.as_ref()
+            .ok_or(MatrixError::NoSession)?;
+        
+        let client = reqwest::Client::new();
+        let mut url = format!("{}/_matrix/client/r0/sync", self.homeserver_url);
+        
+        // add query parameters
+        url.push_str("?timeout=30000");
+        if let Some(s) = since {
+            url.push_str(&format!("&since={}", s));
+        }
+        
+        let response = client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await?;
+        
+        if response.status().is_success() {
+            let sync_response = response.json::<SyncResponse>().await?;
+            Ok(sync_response)
+        } else {
+            let error_text = response.text().await?;
+            Err(MatrixError::ApiError(error_text))
+        }
+    }
+
+    pub async fn send_message(
+        &self,
+        room_id: String,
+        message: String,
+    ) -> Result<serde_json::Value, MatrixError> {
+        let token = self.access_token.as_ref()
+            .ok_or(MatrixError::NoSession)?;
+        
+        let client = reqwest::Client::new();
+        let txn_id = uuid::Uuid::new_v4().to_string();
+        let url = format!(
+            "{}/_matrix/client/r0/rooms/{}/send/m.room.message/{}",
+            self.homeserver_url,
+            urlencoding::encode(&room_id),
+            txn_id
+        );
+        
+        let body = serde_json::json!({
+            "msgtype": "m.text",
+            "body": message
+        });
+
+        let response = client
+            .put(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .json(&body)
+            .send()
+            .await?;
+        
+        if response.status().is_success() {
+            let result = response.json::<serde_json::Value>().await?;
+            Ok(result)
+        } else {
+            let error_text = response.text().await?;
+            Err(MatrixError::ApiError(error_text))
+        }
     }
 }
 

@@ -18,7 +18,19 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let state = Arc::new(AppState::new());
+    let mut state = AppState::new();
+    
+    // initialize database (optional - continues without db if it fails)
+    if let Err(e) = state.init_database().await {
+        tracing::warn!("database connection failed: {}. continuing without database.", e);
+    }
+    
+    // initialize redis (optional - continues without redis if it fails)
+    if let Err(e) = state.init_redis().await {
+        tracing::warn!("redis connection failed: {}. continuing without redis.", e);
+    }
+
+    let state = Arc::new(state);
 
     let app = router()
         .layer(CorsLayer::permissive())
@@ -39,4 +51,5 @@ fn router() -> Router<Arc<AppState>> {
     Router::new()
         .merge(routes::health::router())
         .merge(routes::auth::router())
+        .merge(routes::sync::router())
 }

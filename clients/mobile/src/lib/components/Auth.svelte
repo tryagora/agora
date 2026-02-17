@@ -3,6 +3,12 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
 
+	interface Props {
+		onAuthSuccess: (userId: string, accessToken: string) => void;
+	}
+
+	let { onAuthSuccess }: Props = $props();
+
 	let username = $state('');
 	let password = $state('');
 	let error = $state('');
@@ -26,6 +32,8 @@
 			if (response.ok) {
 				const data = await response.json();
 				success = `registered! user: ${data.user_id}`;
+				// auto login after registration
+				onAuthSuccess(data.user_id, data.access_token);
 			} else {
 				error = 'registration failed';
 			}
@@ -51,6 +59,7 @@
 			if (response.ok) {
 				const data = await response.json();
 				success = `logged in! welcome ${data.user_id}`;
+				onAuthSuccess(data.user_id, data.access_token);
 			} else {
 				error = 'login failed';
 			}
