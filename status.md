@@ -4,7 +4,7 @@
 last updated: 2026-02-17
 
 ## current focus
-full stack functional — need to test end-to-end messaging
+adding discord-like server/channel organization — ui now has three-pane layout
 
 ## completed
 - 2026-02-17 initialized git repository
@@ -30,13 +30,19 @@ full stack functional — need to test end-to-end messaging
 - 2026-02-17 **implemented matrix sync endpoint** — /sync fetches messages from conduit
 - 2026-02-17 **created chat interface in tauri** — two-pane layout with sidebar and message view
 - 2026-02-17 **connected auth to chat flow** — successful login switches to chat view
+- 2026-02-17 **added server/room management endpoints** — create, join, list rooms and spaces
+- 2026-02-17 **added member management** — get room members and invite users
+- 2026-02-17 **created discord-like three-pane ui** — server list + channel list + chat
+- 2026-02-17 **implemented server creation/joining** — create spaces and join via room id
+- 2026-02-17 **implemented channel management** — create channels within servers
 
 ## in progress
 
 ## up next
-- test full end-to-end: register → login → sync messages → send message
-- join a room and test actual matrix messaging
-- add livekit voice integration
+- wire up real matrix room hierarchy (spaces -> rooms)
+- implement member list display
+- add voice/video with livekit
+- create web client with same features
 
 ## known issues
 - flutter lsp errors from old file still cached (harmless)
@@ -48,9 +54,11 @@ full stack functional — need to test end-to-end messaging
 - 2026-02-17 conduit 0.7.0 for matrix homeserver
 - 2026-02-17 switched from flutter to tauri for mobile/desktop client
 - 2026-02-17 **migrated to tauri 2 + svelte 5 + shadcn-svelte** — modern stack with better dx and mobile support
-- 2026-02-17 axum api structured with modular routes (health, auth, sync) and state management
+- 2026-02-17 axum api structured with modular routes (health, auth, rooms, sync) and state management
 - 2026-02-17 matrix client in rust backend to proxy requests to conduit
 - 2026-02-17 conduit must bind to 0.0.0.0 (not localhost) inside docker container to accept external connections
 - 2026-02-17 matrix uia (user-interactive authentication) flow requires two-step registration: first get session, then complete with auth
 - 2026-02-17 conduit returns `home_server` in login response but not in registration response — made field optional in rust structs
 - 2026-02-17 **api gracefully handles missing database/redis** — continues operating with just matrix functionality
+- 2026-02-17 **discord servers map to matrix spaces** — spaces are rooms with type "m.space"
+- 2026-02-17 **discord channels map to matrix rooms** — child rooms of a space
