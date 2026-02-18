@@ -1,21 +1,35 @@
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{broadcast, RwLock};
+
+/// a presence change that is broadcast to all connected websocket clients
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PresenceEvent {
+    pub user_id: String,
+    pub presence: String,
+}
+
+// how many events to buffer for slow receivers before they start dropping
+const PRESENCE_CHANNEL_CAPACITY: usize = 64;
 
 pub struct AppState {
     pub db_pool: Option<sqlx::PgPool>,
     pub redis: Option<redis::aio::MultiplexedConnection>,
     pub matrix_client: Arc<RwLock<Option<crate::matrix::client::MatrixClient>>>,
     pub homeserver_url: String,
+    /// send a PresenceEvent here to push it to all connected ws clients instantly
+    pub presence_tx: broadcast::Sender<PresenceEvent>,
 }
 
 impl AppState {
     pub fn new() -> Self {
+        let (presence_tx, _) = broadcast::channel(PRESENCE_CHANNEL_CAPACITY);
         Self {
             db_pool: None,
             redis: None,
             matrix_client: Arc::new(RwLock::new(None)),
             homeserver_url: std::env::var("CONDUIT_URL")
                 .unwrap_or_else(|_| "http://localhost:8448".to_string()),
+            presence_tx,
         }
     }
 

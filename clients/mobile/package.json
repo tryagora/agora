@@ -41,8 +41,10 @@
 	"dependencies": {
 		"@tailwindcss/vite": "^4.1.7",
 		"@tauri-apps/api": "^2.5.0",
+		"@tauri-apps/plugin-notification": "^2.3.3",
 		"@types/node": "^22.15.19",
 		"clsx": "^2.1.1",
+		"ogl": "^1.0.11",
 		"tailwind-merge": "^3.3.0",
 		"tailwindcss": "^4.1.7"
 	}

@@ -36,7 +36,7 @@ async fn main() {
         .layer(CorsLayer::permissive())
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
         .await
         .expect("failed to bind to port 3000");
 
@@ -53,4 +53,7 @@ fn router() -> Router<Arc<AppState>> {
         .merge(routes::auth::router())
         .merge(routes::rooms::router())
         .merge(routes::sync::router())
+        .merge(routes::friends::router())
+        .merge(routes::users::router())
+        .merge(routes::presence_ws::router())
 }
