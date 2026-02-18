@@ -9,6 +9,7 @@
 		name: string | null;
 		topic: string | null;
 		is_space: boolean;
+		channel_type?: string | null;
 		parent_id?: string;
 	}
 
@@ -24,13 +25,18 @@
 		serverId: string | null;
 		selectedChannelId: string | null;
 		onSelectChannel: (channelId: string, channelName?: string) => void;
+		onSelectVoiceChannel?: (channelId: string, channelName?: string) => void;
 		isAdmin?: boolean;
 		userId?: string;
 		apiUrl?: string;
 		onOpenSettings?: () => void;
+		// voice bar — passed down from Chat so the sidebar can show "connected to voice"
+		activeVoiceChannelId?: string | null;
+		activeVoiceChannelName?: string | null;
+		onDisconnectVoice?: () => void;
 	}
 
-	let { accessToken, serverId, selectedChannelId, onSelectChannel, isAdmin = false, userId = '', apiUrl = 'http://localhost:3000', onOpenSettings }: Props = $props();
+	let { accessToken, serverId, selectedChannelId, onSelectChannel, onSelectVoiceChannel, isAdmin = false, userId = '', apiUrl = 'http://localhost:3000', onOpenSettings, activeVoiceChannelId = null, activeVoiceChannelName = null, onDisconnectVoice }: Props = $props();
 
 	let channels = $state<Channel[]>([]);
 	let categories = $state<Category[]>([]);
@@ -41,9 +47,13 @@
 	let showCreateCategoryDialog = $state(false);
 	let showDeleteConfirm = $state(false);
 	let newChannelName = $state('');
+	let newChannelType = $state<'text' | 'voice'>('text');
 	let newCategoryName = $state('');
 	let channelToDelete = $state<Channel | null>(null);
 	let selectedCategoryId = $state<string | null>(null);
+
+	// maps room_id → list of participant identities currently in voice
+	let voiceParticipants = $state<Map<string, string[]>>(new Map());
 
 	const API_URL = 'http://localhost:3000';
 
@@ -124,13 +134,15 @@
 					access_token: accessToken,
 					name: newChannelName,
 					is_space: false,
-					parent_space_id: selectedCategoryId || serverId
+					parent_space_id: selectedCategoryId || serverId,
+					channel_type: newChannelType,
 				})
 			});
 			
 			if (response.ok) {
 				showCreateChannelDialog = false;
 				newChannelName = '';
+				newChannelType = 'text';
 				selectedCategoryId = null;
 				await loadChannels();
 			} else {
@@ -225,7 +237,17 @@
 	function openCreateChannelDialog(categoryId?: string) {
 		selectedCategoryId = categoryId || null;
 		newChannelName = '';
+		newChannelType = 'text';
 		showCreateChannelDialog = true;
+	}
+
+	function handleChannelClick(channel: Channel) {
+		const isVoice = channel.channel_type === 'voice';
+		if (isVoice && onSelectVoiceChannel) {
+			onSelectVoiceChannel(channel.room_id, channel.name || undefined);
+		} else {
+			onSelectChannel(channel.room_id, channel.name || undefined);
+		}
 	}
 
 	function confirmDeleteChannel(channel: Channel) {
@@ -239,8 +261,40 @@
 		loadChannels();
 	});
 
-	function getChannelIcon(): string {
-		return '#';
+	// poll voice participants every 5s for all voice channels in the current server
+	async function pollVoiceParticipants() {
+		const allVoiceChannels: Channel[] = [
+			...uncategorizedChannels.filter(c => c.channel_type === 'voice'),
+			...categories.flatMap(cat => cat.children.filter(c => c.channel_type === 'voice')),
+		];
+		if (allVoiceChannels.length === 0) return;
+
+		const updated = new Map<string, string[]>(voiceParticipants);
+		await Promise.all(allVoiceChannels.map(async (ch) => {
+			try {
+				const params = new URLSearchParams({ room_name: ch.room_id });
+				const res = await fetch(`${API_URL}/voice/participants?${params}`);
+				if (res.ok) {
+					const data = await res.json();
+					updated.set(ch.room_id, data.participants || []);
+				}
+			} catch {
+				// ignore — livekit might not be running
+			}
+		}));
+		voiceParticipants = updated;
+	}
+
+	$effect(() => {
+		// only poll when we have channels loaded
+		const _channels = uncategorizedChannels.length + categories.length;
+		pollVoiceParticipants();
+		const interval = setInterval(pollVoiceParticipants, 5000);
+		return () => clearInterval(interval);
+	});
+
+	function isVoiceChannel(channel: Channel): boolean {
+		return channel.channel_type === 'voice';
 	}
 </script>
 
@@ -303,15 +357,25 @@
 						{#if category.isOpen}
 							<div class="space-y-1">
 								{#each category.children as channel (channel.room_id)}
-									<div class="group flex items-center">
+									<div class="group flex items-center flex-wrap">
 										<button
 											class="flex-1 text-left px-3 py-2 rounded text-muted-foreground hover:bg-muted hover:text-card-foreground transition-colors flex items-center gap-2"
 											class:bg-muted={selectedChannelId === channel.room_id}
 											class:text-card-foreground={selectedChannelId === channel.room_id}
-											onclick={() => onSelectChannel(channel.room_id, channel.name || undefined)}
+											onclick={() => handleChannelClick(channel)}
 										>
-											<span class="text-muted-foreground">{getChannelIcon()}</span>
+											{#if isVoiceChannel(channel)}
+												<!-- speaker icon for voice channels -->
+												<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M12 6v12M9.172 9.172a4 4 0 105.656 5.656" />
+												</svg>
+											{:else}
+												<span class="text-muted-foreground text-xs font-mono">#</span>
+											{/if}
 											<span class="truncate">{channel.name || 'unnamed'}</span>
+											{#if isVoiceChannel(channel) && (voiceParticipants.get(channel.room_id) ?? []).length > 0}
+												<span class="ml-auto text-xs text-green-500 flex-shrink-0">{(voiceParticipants.get(channel.room_id) ?? []).length}</span>
+											{/if}
 										</button>
 										{#if isAdmin}
 											<button
@@ -324,6 +388,19 @@
 													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
 												</svg>
 											</button>
+										{/if}
+										<!-- voice participant list below channel row -->
+										{#if isVoiceChannel(channel)}
+											{@const vp = voiceParticipants.get(channel.room_id) ?? []}
+											{#each vp as identity (identity)}
+												<div class="w-full flex items-center gap-2 pl-8 pr-3 py-0.5">
+													<div class="w-4 h-4 rounded-full bg-muted flex items-center justify-center text-xs text-muted-foreground flex-shrink-0">
+														{(identity.split(':')[0].replace('@', '')[0] || '?').toUpperCase()}
+													</div>
+													<span class="text-xs text-muted-foreground truncate">{identity.split(':')[0].replace('@', '')}</span>
+													<span class="ml-auto w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0"></span>
+												</div>
+											{/each}
 										{/if}
 									</div>
 								{/each}
@@ -348,15 +425,24 @@
 							channels
 						</span>
 						{#each uncategorizedChannels as channel (channel.room_id)}
-							<div class="group flex items-center">
+							<div class="group flex items-center flex-wrap">
 								<button
 									class="flex-1 text-left px-3 py-2 rounded text-muted-foreground hover:bg-muted hover:text-card-foreground transition-colors flex items-center gap-2"
 									class:bg-muted={selectedChannelId === channel.room_id}
 									class:text-card-foreground={selectedChannelId === channel.room_id}
-									onclick={() => onSelectChannel(channel.room_id, channel.name || undefined)}
+									onclick={() => handleChannelClick(channel)}
 								>
-									<span class="text-muted-foreground">{getChannelIcon()}</span>
+									{#if isVoiceChannel(channel)}
+										<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M12 6v12M9.172 9.172a4 4 0 105.656 5.656" />
+										</svg>
+									{:else}
+										<span class="text-muted-foreground text-xs font-mono">#</span>
+									{/if}
 									<span class="truncate">{channel.name || 'unnamed'}</span>
+									{#if isVoiceChannel(channel) && (voiceParticipants.get(channel.room_id) ?? []).length > 0}
+										<span class="ml-auto text-xs text-green-500 flex-shrink-0">{(voiceParticipants.get(channel.room_id) ?? []).length}</span>
+									{/if}
 								</button>
 								{#if isAdmin}
 									<button
@@ -369,6 +455,19 @@
 											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
 										</svg>
 									</button>
+								{/if}
+								<!-- voice participant list below channel row -->
+								{#if isVoiceChannel(channel)}
+									{@const vp = voiceParticipants.get(channel.room_id) ?? []}
+									{#each vp as identity (identity)}
+										<div class="w-full flex items-center gap-2 pl-8 pr-3 py-0.5">
+											<div class="w-4 h-4 rounded-full bg-muted flex items-center justify-center text-xs text-muted-foreground flex-shrink-0">
+												{(identity.split(':')[0].replace('@', '')[0] || '?').toUpperCase()}
+											</div>
+											<span class="text-xs text-muted-foreground truncate">{identity.split(':')[0].replace('@', '')}</span>
+											<span class="ml-auto w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0"></span>
+										</div>
+									{/each}
 								{/if}
 							</div>
 						{/each}
@@ -399,6 +498,25 @@
 				{#if error}
 					<div class="text-destructive text-sm mb-3">{error}</div>
 				{/if}
+				<!-- channel type selector -->
+				<div class="mb-4 flex gap-2">
+					<button
+						class={`flex-1 flex flex-col items-center gap-1 p-3 rounded border-2 transition-colors ${newChannelType === 'text' ? 'border-primary bg-primary/5' : 'border-border'}`}
+						onclick={() => newChannelType = 'text'}
+					>
+						<span class="text-lg font-mono text-muted-foreground">#</span>
+						<span class="text-xs text-card-foreground">text</span>
+					</button>
+					<button
+						class={`flex-1 flex flex-col items-center gap-1 p-3 rounded border-2 transition-colors ${newChannelType === 'voice' ? 'border-primary bg-primary/5' : 'border-border'}`}
+						onclick={() => newChannelType = 'voice'}
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M12 6v12M9.172 9.172a4 4 0 105.656 5.656" />
+						</svg>
+						<span class="text-xs text-card-foreground">voice</span>
+					</button>
+				</div>
 				<Input
 					type="text"
 					placeholder="channel name"
@@ -463,6 +581,33 @@
 					</Button>
 				</div>
 			</div>
+		</div>
+	{/if}
+
+	<!-- persistent voice bar — shown at bottom of sidebar when connected to a voice channel -->
+	{#if activeVoiceChannelId}
+		<div class="border-t border-border bg-green-500/10 px-3 py-2 flex items-center gap-2">
+			<!-- animated green indicator -->
+			<div class="relative flex-shrink-0">
+				<div class="w-2.5 h-2.5 rounded-full bg-green-500"></div>
+				<div class="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-60"></div>
+			</div>
+			<div class="flex-1 min-w-0">
+				<p class="text-xs font-semibold text-green-400 truncate">voice connected</p>
+				<p class="text-xs text-muted-foreground truncate">{activeVoiceChannelName || 'voice channel'}</p>
+			</div>
+			{#if onDisconnectVoice}
+				<button
+					class="flex-shrink-0 w-6 h-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+					onclick={onDisconnectVoice}
+					title="disconnect from voice"
+					aria-label="disconnect from voice"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.279 3H5z" />
+					</svg>
+				</button>
+			{/if}
 		</div>
 	{/if}
 

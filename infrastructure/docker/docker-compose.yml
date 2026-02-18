@@ -52,6 +52,10 @@ services:
       - ./livekit.yaml:/etc/livekit.yaml:ro
     networks:
       - agora
+    # host.docker.internal resolves to the Windows host IP on Docker Desktop
+    # needed so LiveKit can read the correct node_ip at startup via env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   conduit-data:

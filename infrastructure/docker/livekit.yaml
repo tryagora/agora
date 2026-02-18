@@ -1,5 +1,10 @@
 # livekit server configuration
 # see: https://docs.livekit.io/references/server-config/
+#
+# Docker Desktop on Windows (WSL2 backend): UDP NAT is asymmetric so WebRTC UDP
+# fails. We force ICE to use TCP (port 7881) which works correctly through
+# Docker's port mapping. UDP is left enabled as a fallback but TCP will be
+# preferred by the client when UDP candidate pairs fail.
 
 port: 7880
 bind_addresses:
@@ -9,9 +14,16 @@ rtc:
   udp_port: 7882
   tcp_port: 7881
   use_external_ip: false
+  # advertise 127.0.0.1 — clients on the same Windows machine reach this
+  # via Docker's port mapping on 7881 (TCP) and 7882 (UDP)
+  node_ip: 127.0.0.1
+  # force TCP for ICE so it works through Docker NAT on Windows/WSL2
+  force_tcp: true
 
 logging:
   level: info
 
 keys:
-  devkey: devsecret
+  # secret must be at least 32 characters
+  devkey: devsecret_agora_local_development_key_32chars
+

@@ -16,11 +16,20 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2.2.0", features = [] }
 
+# optimize the release binary aggressively — reduces both binary size and RAM
+# due to fewer monomorphized generics and smaller code that fits in CPU cache
+[profile.release]
+opt-level = 3
+lto = true           # cross-crate inlining, eliminates dead code
+codegen-units = 1    # single codegen unit = better optimization, slower compile
+strip = true         # strip debug symbols from binary
+panic = "abort"      # removes unwinding machinery, saves ~50KB+
+
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.6.2", features = [] }
+tauri = { version = "2.6.2", features = ["tray-icon"] }
 tauri-plugin-log = "2"
 tauri-plugin-notification = "2"
 thiserror = "2.0.12"

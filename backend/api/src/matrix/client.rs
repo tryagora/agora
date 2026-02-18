@@ -255,6 +255,34 @@ impl MatrixClient {
         }
     }
 
+    /// send a message event with arbitrary content — used for call signaling
+    pub async fn send_message_content(
+        &self,
+        room_id: String,
+        content: serde_json::Value,
+    ) -> Result<serde_json::Value, MatrixError> {
+        let token = self.access_token.as_ref().ok_or(MatrixError::NoSession)?;
+        let client = reqwest::Client::new();
+        let txn_id = uuid::Uuid::new_v4().to_string();
+        let url = format!(
+            "{}/_matrix/client/r0/rooms/{}/send/m.room.message/{}",
+            self.homeserver_url,
+            encode_matrix_id(&room_id),
+            txn_id
+        );
+        let response = client
+            .put(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .json(&content)
+            .send()
+            .await?;
+        if response.status().is_success() {
+            Ok(response.json::<serde_json::Value>().await?)
+        } else {
+            Err(MatrixError::ApiError(response.text().await?))
+        }
+    }
+
     pub async fn send_message(
         &self,
         room_id: String,
@@ -846,6 +874,37 @@ impl MatrixClient {
         } else {
             let error_text = response.text().await?;
             Err(MatrixError::ApiError(error_text))
+        }
+    }
+
+    /// send a state event to a room (PUT /rooms/{room_id}/state/{event_type}/{state_key})
+    pub async fn send_state_event(
+        &self,
+        room_id: String,
+        event_type: String,
+        state_key: String,
+        content: serde_json::Value,
+    ) -> Result<(), MatrixError> {
+        let token = self.access_token.as_ref().ok_or(MatrixError::NoSession)?;
+        let client = reqwest::Client::new();
+        let url = format!(
+            "{}/_matrix/client/r0/rooms/{}/state/{}/{}",
+            self.homeserver_url,
+            encode_matrix_id(&room_id),
+            event_type,
+            state_key
+        );
+        let response = client
+            .put(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .json(&content)
+            .send()
+            .await?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let err = response.text().await?;
+            Err(MatrixError::ApiError(err))
         }
     }
 

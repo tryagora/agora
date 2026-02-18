@@ -43,6 +43,8 @@ pub struct RoomInfo {
     pub topic: Option<String>,
     pub is_space: bool,
     pub member_count: Option<i32>,
+    /// "text" or "voice" — defaults to "text" if the state event is absent
+    pub channel_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,6 +54,8 @@ pub struct CreateRoomRequest {
     pub topic: Option<String>,
     pub is_space: Option<bool>,
     pub parent_space_id: Option<String>,
+    /// "text" (default) or "voice"
+    pub channel_type: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -226,12 +230,21 @@ async fn list_joined_rooms(
                     .map(|v| v.as_str() == Some("m.space"))
                     .unwrap_or(false);
 
+                let channel_type = state_events
+                    .iter()
+                    .find(|e| e.event_type == "agora.room.type")
+                    .and_then(|e| e.content.get("type"))
+                    .and_then(|v| v.as_str())
+                    .map(String::from)
+                    .unwrap_or_else(|| "text".to_string());
+
                 rooms.push(RoomInfo {
                     room_id,
                     name,
                     topic,
                     is_space,
                     member_count: None,
+                    channel_type: Some(channel_type),
                 });
             }
 
@@ -254,10 +267,25 @@ async fn create_room(
     let parent_space_id = req.parent_space_id.clone();
     let room_name = req.name.clone();
     let is_space = req.is_space.unwrap_or(false);
+    let channel_type = req.channel_type.clone().unwrap_or_else(|| "text".to_string());
 
     match matrix.create_room(req.name.clone(), req.topic.clone(), is_space).await {
         Ok(response) => {
             let room_id = response.room_id.clone();
+
+            // store the channel type as a Matrix state event so all clients can read it
+            // only makes sense for actual channels (not spaces/servers)
+            if !is_space && channel_type != "text" {
+                let content = serde_json::json!({ "type": channel_type });
+                if let Err(e) = matrix.send_state_event(
+                    room_id.clone(),
+                    "agora.room.type".to_string(),
+                    "".to_string(),
+                    content,
+                ).await {
+                    tracing::warn!("failed to set channel type state event: {}", e);
+                }
+            }
 
             // create a room alias so users can join by name
             // normalize the name: lowercase, replace spaces with dashes, remove special chars
@@ -474,41 +502,43 @@ async fn get_space_children(
     let mut children = Vec::new();
 
     for room_id in child_room_ids {
-        // fetch each child room's state for name/topic
-        let name = if let Ok(room_state) = matrix.get_room_state(room_id.clone()).await {
-            room_state
-                .iter()
-                .find(|e| e.event_type == "m.room.name")
-                .and_then(|e| e.content.get("name"))
-                .and_then(|v| v.as_str())
-                .map(String::from)
-        } else {
-            None
-        };
+        // single state fetch per child — extract all fields in one pass
+        let (name, topic, is_space, channel_type) =
+            if let Ok(room_state) = matrix.get_room_state(room_id.clone()).await {
+                let name = room_state
+                    .iter()
+                    .find(|e| e.event_type == "m.room.name")
+                    .and_then(|e| e.content.get("name"))
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
 
-        let topic = if let Ok(room_state) = matrix.get_room_state(room_id.clone()).await {
-            room_state
-                .iter()
-                .find(|e| e.event_type == "m.room.topic")
-                .and_then(|e| e.content.get("topic"))
-                .and_then(|v| v.as_str())
-                .map(String::from)
-        } else {
-            None
-        };
+                let topic = room_state
+                    .iter()
+                    .find(|e| e.event_type == "m.room.topic")
+                    .and_then(|e| e.content.get("topic"))
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
 
-        // check if this child is a space (category) by looking at creation content
-        let is_space = if let Ok(room_state) = matrix.get_room_state(room_id.clone()).await {
-            room_state
-                .iter()
-                .find(|e| e.event_type == "m.room.create")
-                .and_then(|e| e.content.get("type"))
-                .and_then(|v| v.as_str())
-                .map(|t| t == "m.space")
-                .unwrap_or(false)
-        } else {
-            false
-        };
+                let is_space = room_state
+                    .iter()
+                    .find(|e| e.event_type == "m.room.create")
+                    .and_then(|e| e.content.get("type"))
+                    .and_then(|v| v.as_str())
+                    .map(|t| t == "m.space")
+                    .unwrap_or(false);
+
+                let channel_type = room_state
+                    .iter()
+                    .find(|e| e.event_type == "agora.room.type")
+                    .and_then(|e| e.content.get("type"))
+                    .and_then(|v| v.as_str())
+                    .map(String::from)
+                    .unwrap_or_else(|| "text".to_string());
+
+                (name, topic, is_space, channel_type)
+            } else {
+                (None, None, false, "text".to_string())
+            };
 
         children.push(RoomInfo {
             room_id,
@@ -516,6 +546,7 @@ async fn get_space_children(
             topic,
             is_space,
             member_count: None,
+            channel_type: Some(channel_type),
         });
     }
 

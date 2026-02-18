@@ -212,17 +212,25 @@ void main(){
 		setSize();
 
 		let raf = 0;
+		let paused = false;
 		const t0 = performance.now();
 		const loop = (t: number) => {
-			(program.uniforms.iTime as { value: number }).value = (t - t0) * 0.001;
-			renderer.render({ scene: mesh });
+			if (!paused) {
+				(program.uniforms.iTime as { value: number }).value = (t - t0) * 0.001;
+				renderer.render({ scene: mesh });
+			}
 			raf = requestAnimationFrame(loop);
 		};
 		raf = requestAnimationFrame(loop);
 
+		// pause rendering when the window is hidden to save GPU + CPU
+		const onVisibility = () => { paused = document.hidden; };
+		document.addEventListener('visibilitychange', onVisibility);
+
 		return () => {
 			cancelAnimationFrame(raf);
 			ro.disconnect();
+			document.removeEventListener('visibilitychange', onVisibility);
 			try { container.removeChild(canvas); } catch { /* already removed */ }
 		};
 	});

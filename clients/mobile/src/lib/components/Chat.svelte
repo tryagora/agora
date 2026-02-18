@@ -6,6 +6,8 @@
 	import MemberList from './MemberList.svelte';
 	import ServerManage from './ServerManage.svelte';
 	import SettingsModal from './SettingsModal.svelte';
+	import VoiceChannel from './VoiceChannel.svelte';
+	import IncomingCall from './IncomingCall.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import {
@@ -66,6 +68,29 @@
 
 	// friends page — shown in main area when in DM mode with no channel selected
 	let showFriendsPage = $state(true);
+
+	// voice channel state — when set, the main area shows VoiceChannel instead of chat
+	let activeVoiceChannelId = $state<string | null>(null);
+	let activeVoiceChannelName = $state<string | null>(null);
+	// dm call state — inline call panel above messages
+	let showDmCall = $state(false);
+
+	// ── call signaling ─────────────────────────────────────────────────────────
+	// outgoing call state (we are the caller)
+	let outgoingCallId = $state<string | null>(null);
+	let outgoingCallRoomId = $state<string | null>(null);
+	let outgoingCallTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	// incoming call state (we are the callee)
+	let incomingCall = $state<{
+		callId: string;
+		roomId: string;
+		callerName: string;
+		callerId: string;
+	} | null>(null);
+
+	// call events we have already processed — prevents re-triggering on re-sync
+	const seenCallIds = new Set<string>();
 
 	// use the server url configured during onboarding (or default)
 	const API_URL = $derived(apiUrl);
@@ -129,10 +154,33 @@
 						for (const m of newMessages) {
 							if (m.event_id) seenEventIds.add(m.event_id);
 						}
-						messages = [...messages, ...newMessages];
+
+						// split: call signaling events vs regular messages
+						const callEvents = newMessages.filter((m: any) => m.content_type === 'agora.call' || (m.content && typeof m.content === 'object' && (m.content as any).msgtype === 'agora.call'));
+						const textMessages = newMessages.filter((m: any) => m.content_type !== 'agora.call' && !(m.content && typeof m.content === 'object' && (m.content as any).msgtype === 'agora.call'));
+
+						// process call events immediately (before storing messages)
+						if (initialSyncDone) {
+							for (const evt of callEvents) {
+								// the sync endpoint returns content as a string for text messages
+								// but agora.call messages have structured content
+								handleCallEvent({
+									...evt,
+									call_id: evt.call_id,
+									action: evt.action,
+									from: evt.from,
+									display_name: evt.display_name,
+								});
+							}
+						}
+
+						// cap total messages to 500 to prevent unbounded memory growth
+						// — old messages are evicted from the front, keeping the newest
+						const combined = [...messages, ...textMessages];
+						messages = combined.length > 500 ? combined.slice(combined.length - 500) : combined;
 						// fire notifications only after the initial history load
 						if (initialSyncDone) {
-							for (const m of newMessages) {
+							for (const m of textMessages) {
 								await maybeNotify(m);
 							}
 						}
@@ -207,6 +255,10 @@
 	function handleSelectChannel(channelId: string, channelName?: string) {
 		selectedChannelId = channelId;
 		selectedChannelName = channelName || null;
+		// if a voice channel is active from a previous selection, clear it
+		activeVoiceChannelId = null;
+		activeVoiceChannelName = null;
+		showDmCall = false;
 		if (!selectedServerId) {
 			// selecting a dm — stay in DM mode but leave friends page
 			isDmMode = true;
@@ -216,10 +268,23 @@
 		}
 	}
 
+	function handleSelectVoiceChannel(channelId: string, channelName?: string) {
+		activeVoiceChannelId = channelId;
+		activeVoiceChannelName = channelName || null;
+		// clear text channel selection — voice takes over the main area
+		selectedChannelId = null;
+		selectedChannelName = null;
+		isDmMode = false;
+		showFriendsPage = false;
+	}
+
 	async function handleSelectServer(serverId: string, serverName?: string) {
 		selectedServerId = serverId || null;
 		selectedServerName = serverName || null;
 		selectedChannelId = null;
+		activeVoiceChannelId = null;
+		activeVoiceChannelName = null;
+		showDmCall = false;
 		isDmMode = !serverId; // DM mode when no server selected
 		showFriendsPage = !serverId; // show friends page when going home
 		
@@ -319,11 +384,152 @@
 		}
 	}
 
-	// poll for new messages every 5 seconds
+	// ── call signaling helpers ────────────────────────────────────────────────
+
+	async function sendCallEvent(roomId: string, action: string, callId: string) {
+		try {
+			await fetch(`${API_URL}/voice/call`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					access_token: accessToken,
+					room_id: roomId,
+					action,
+					call_id: callId,
+					from_user_id: userId,
+					display_name: userId.split(':')[0].replace('@', ''),
+				}),
+			});
+		} catch (e) {
+			console.error('failed to send call event:', e);
+		}
+	}
+
+	// start an outgoing DM voice call
+	async function startDmCall() {
+		const roomId = selectedChannelId;
+		if (!roomId || !isDmMode) return;
+
+		// if a call is already active (accepted), just show it inline
+		if (showDmCall) { showDmCall = false; return; }
+
+		const callId = crypto.randomUUID();
+		outgoingCallId = callId;
+		outgoingCallRoomId = roomId;
+
+		await sendCallEvent(roomId, 'ring', callId);
+
+		// notify caller via desktop if hidden
+		try {
+			if (await isPermissionGranted()) {
+				sendNotification({ title: 'calling...', body: `waiting for ${selectedChannelName || 'them'} to answer` });
+			}
+		} catch { /* not in tauri */ }
+
+		// auto-cancel after 30 seconds if no answer
+		outgoingCallTimeout = setTimeout(async () => {
+			if (outgoingCallId === callId) {
+				await sendCallEvent(roomId, 'cancel', callId);
+				outgoingCallId = null;
+				outgoingCallRoomId = null;
+			}
+		}, 30_000);
+	}
+
+	async function cancelOutgoingCall() {
+		if (!outgoingCallId || !outgoingCallRoomId) return;
+		if (outgoingCallTimeout) { clearTimeout(outgoingCallTimeout); outgoingCallTimeout = null; }
+		await sendCallEvent(outgoingCallRoomId, 'cancel', outgoingCallId);
+		outgoingCallId = null;
+		outgoingCallRoomId = null;
+	}
+
+	async function acceptIncomingCall() {
+		if (!incomingCall) return;
+		const { callId, roomId } = incomingCall;
+		incomingCall = null;
+		await sendCallEvent(roomId, 'accept', callId);
+		// navigate to the DM room and open the voice panel
+		handleSelectChannel(roomId, selectedChannelName || undefined);
+		showDmCall = true;
+	}
+
+	async function declineIncomingCall() {
+		if (!incomingCall) return;
+		const { callId, roomId } = incomingCall;
+		incomingCall = null;
+		await sendCallEvent(roomId, 'cancel', callId);
+	}
+
+	// process a call event message received via sync
+	function handleCallEvent(msg: Message & { call_id?: string; action?: string; from?: string; display_name?: string }) {
+		const { call_id, action, from, room_id } = msg;
+		if (!call_id || !action || !from) return;
+		// skip our own call events
+		if (from === userId) {
+			// if we sent a 'cancel' or the callee sent 'accept', clear outgoing call
+			if (action === 'cancel' && outgoingCallId === call_id) {
+				if (outgoingCallTimeout) { clearTimeout(outgoingCallTimeout); outgoingCallTimeout = null; }
+				outgoingCallId = null;
+				outgoingCallRoomId = null;
+			}
+			if (action === 'accept' && outgoingCallId === call_id) {
+				if (outgoingCallTimeout) { clearTimeout(outgoingCallTimeout); outgoingCallTimeout = null; }
+				outgoingCallId = null;
+				outgoingCallRoomId = null;
+				// the other side accepted — open our voice panel
+				showDmCall = true;
+			}
+			return;
+		}
+		// dedup — don't show the same call event twice
+		if (seenCallIds.has(call_id + action)) return;
+		seenCallIds.add(call_id + action);
+
+		if (action === 'ring') {
+			// someone is calling us
+			const callerName = (msg.display_name || from).split(':')[0].replace('@', '');
+			incomingCall = { callId: call_id, roomId: room_id, callerName, callerId: from };
+			// desktop notification so they hear it even when window is hidden
+			try {
+				isPermissionGranted().then(granted => {
+					if (granted) sendNotification({ title: 'incoming call', body: `${callerName} is calling you` });
+				});
+			} catch { /* not in tauri */ }
+		} else if (action === 'cancel' || action === 'accept') {
+			// call was cancelled by caller, or already accepted — dismiss incoming
+			if (incomingCall?.callId === call_id) {
+				incomingCall = null;
+			}
+		}
+	}
+
+	// adaptive sync polling:
+	// - 5s when the window is visible
+	// - 30s when hidden (minimized to tray) — notifications still arrive via WS
+	// this cuts idle CPU and network traffic significantly
 	$effect(() => {
-		const interval = setInterval(sync, 5000);
+		let interval: ReturnType<typeof setInterval>;
+
+		function startInterval() {
+			clearInterval(interval);
+			const delay = document.hidden ? 30_000 : 5_000;
+			interval = setInterval(sync, delay);
+		}
+
+		function onVisibilityChange() {
+			startInterval(); // restart with new delay when visibility changes
+			if (!document.hidden) sync(); // immediate sync when window regains focus
+		}
+
+		document.addEventListener('visibilitychange', onVisibilityChange);
 		sync(); // initial sync
-		return () => clearInterval(interval);
+		startInterval();
+
+		return () => {
+			clearInterval(interval);
+			document.removeEventListener('visibilitychange', onVisibilityChange);
+		};
 	});
 
 	function formatTimestamp(ts?: number): string {
@@ -382,16 +588,46 @@
 			serverId={selectedServerId}
 			{selectedChannelId}
 			onSelectChannel={handleSelectChannel}
+			onSelectVoiceChannel={handleSelectVoiceChannel}
 			{isAdmin}
 			{userId}
 			{apiUrl}
 			onOpenSettings={() => showSettings = true}
+			{activeVoiceChannelId}
+			{activeVoiceChannelName}
+			onDisconnectVoice={() => { activeVoiceChannelId = null; activeVoiceChannelName = null; }}
 		/>
 	{/if}
 
 	<!-- chat area + member list -->
 	<div class="flex-1 flex min-h-0">
-	{#if isDmMode && showFriendsPage}
+	{#if activeVoiceChannelId}
+		<!-- voice channel fills the entire main area -->
+		<div class="flex-1 flex flex-col min-h-0 bg-background">
+			<div class="h-14 border-b border-border flex items-center justify-between px-4 bg-card">
+				<div class="flex items-center gap-2">
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M12 6v12M9.172 9.172a4 4 0 105.656 5.656" />
+					</svg>
+					<span class="font-semibold text-card-foreground">{activeVoiceChannelName || 'voice channel'}</span>
+				</div>
+				<div class="flex items-center gap-4">
+					<span class="text-sm text-muted-foreground">{userId}</span>
+					<Button variant="outline" size="sm" onclick={onLogout}>logout</Button>
+				</div>
+			</div>
+			<div class="flex-1 min-h-0 max-w-sm mx-auto w-full py-4 px-4">
+				<VoiceChannel
+					roomId={activeVoiceChannelId}
+					roomName={activeVoiceChannelName || 'voice channel'}
+					{userId}
+					{accessToken}
+					{apiUrl}
+					onDisconnect={() => { activeVoiceChannelId = null; activeVoiceChannelName = null; }}
+				/>
+			</div>
+		</div>
+	{:else if isDmMode && showFriendsPage}
 		<!-- friends page fills the entire remaining space -->
 		<div class="flex-1 flex flex-col min-h-0 bg-background">
 			<!-- header -->
@@ -426,13 +662,40 @@
 				<span class="text-muted-foreground">{isDmMode ? 'select a conversation' : 'select a channel'}</span>
 			{/if}
 			</div>
-			<div class="flex items-center gap-4">
+			<div class="flex items-center gap-3">
+				<!-- voice call button — only show in DM rooms -->
+				{#if selectedChannelId && isDmMode}
+					<button
+						class={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${showDmCall || outgoingCallId ? 'bg-green-500 text-white' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+						onclick={startDmCall}
+						title={showDmCall ? 'end call' : 'start voice call'}
+						aria-label={showDmCall ? 'end voice call' : 'start voice call'}
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+						</svg>
+					</button>
+				{/if}
 				<span class="text-sm text-muted-foreground">{userId}</span>
 				<Button variant="outline" size="sm" onclick={onLogout}>
 					logout
 				</Button>
 			</div>
 		</div>
+
+		<!-- dm voice call panel — shown above messages when call is active -->
+		{#if showDmCall && selectedChannelId && isDmMode}
+			<div class="h-48 border-b border-border bg-card/50 flex-shrink-0">
+				<VoiceChannel
+					roomId={selectedChannelId}
+					roomName={selectedChannelName || 'call'}
+					{userId}
+					{accessToken}
+					{apiUrl}
+					onDisconnect={() => showDmCall = false}
+				/>
+			</div>
+		{/if}
 
 		<!-- messages -->
 		<div class="flex-1 overflow-y-auto p-4 space-y-3 min-h-0" bind:this={messagesContainer}>
@@ -490,6 +753,51 @@
 	{/if}
 	{/if}
 	</div>
+
+	<!-- outgoing call overlay — shown while waiting for the other side to pick up -->
+	{#if outgoingCallId && outgoingCallRoomId}
+		<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+			<div class="bg-card rounded-2xl shadow-2xl w-72 overflow-hidden">
+				<div class="bg-primary/10 px-6 pt-8 pb-6 flex flex-col items-center gap-3">
+					<div class="relative">
+						<div class="w-20 h-20 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-3xl font-bold">
+							{((selectedChannelName || '?')[0]).toUpperCase()}
+						</div>
+						<div class="absolute inset-0 rounded-full border-2 border-primary animate-ping opacity-40"></div>
+					</div>
+					<div class="text-center">
+						<p class="font-semibold text-card-foreground text-lg">{selectedChannelName || 'user'}</p>
+						<p class="text-sm text-muted-foreground">calling...</p>
+					</div>
+				</div>
+				<div class="flex border-t border-border">
+					<button
+						class="flex-1 flex flex-col items-center gap-1.5 py-4 hover:bg-destructive/10 transition-colors"
+						onclick={cancelOutgoingCall}
+						aria-label="cancel call"
+					>
+						<div class="w-10 h-10 rounded-full bg-destructive flex items-center justify-center">
+							<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.279 3H5z" />
+							</svg>
+						</div>
+						<span class="text-xs text-muted-foreground">cancel</span>
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<!-- incoming call overlay -->
+	{#if incomingCall}
+		<IncomingCall
+			callerName={incomingCall.callerName}
+			callId={incomingCall.callId}
+			roomId={incomingCall.roomId}
+			onAccept={acceptIncomingCall}
+			onDecline={declineIncomingCall}
+		/>
+	{/if}
 
 	<!-- create server dialog -->
 	{#if showCreateServerDialog}

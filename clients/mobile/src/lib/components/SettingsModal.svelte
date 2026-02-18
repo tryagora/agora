@@ -1,37 +1,36 @@
 <script lang="ts">
-  import { Button } from "$lib/components/ui/button";
-  import { Input } from "$lib/components/ui/input";
+	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
 
-  interface Props {
-    userId: string;
-    accessToken: string;
-    apiUrl?: string;
-    onClose: () => void;
-  }
+	interface Props {
+		userId: string;
+		accessToken: string;
+		apiUrl?: string;
+		onClose: () => void;
+	}
 
-  let {
-    userId,
-    accessToken,
-    apiUrl = "http://localhost:3000",
-    onClose,
-  }: Props = $props();
+	let { userId, accessToken, apiUrl = 'http://localhost:3000', onClose }: Props = $props();
 
-  type Tab = "account" | "appearance" | "notifications" | "about";
-  let activeTab = $state<Tab>("account");
+	type Tab = 'account' | 'appearance' | 'notifications' | 'about' | 'advanced';
+	let activeTab = $state<Tab>('account');
 
-  // account tab state
-  let displayname = $state("");
-  let statusMsg = $state("");
-  let loading = $state(true);
-  let saving = $state(false);
-  let error = $state("");
-  let success = $state("");
+	// account tab state
+	let displayname = $state('');
+	let statusMsg = $state('');
+	let loading = $state(true);
+	let saving = $state(false);
+	let error = $state('');
+	let success = $state('');
 
-  // notifications tab state
-  let notifGranted = $state(false);
-  let notifDenied = $state(false);
+	// notifications tab state
+	let notifGranted = $state(false);
+	let notifDenied = $state(false);
 
-  const API_URL = apiUrl;
+	// advanced tab state
+	let acknowledgeRisk = $state(false);
+	let resetStatus = $state('');
+
+	const API_URL = apiUrl;
 
   function shortId(uid: string) {
     return uid.replace(/^@/, "").split(":")[0];
@@ -91,9 +90,25 @@
   }
 
   async function requestNotifs() {
-    if (!("Notification" in window)) return;
+    if (!('Notification' in window)) return;
     const p = await Notification.requestPermission();
     checkNotifPerms();
+  }
+
+  // advanced tab functions
+  function clearOnboarding() {
+    localStorage.removeItem('agora_onboarding_done');
+    localStorage.removeItem('agora_server_url');
+    resetStatus = 'onboarding cleared — reload to see it again';
+  }
+
+  function clearAllAppData() {
+    localStorage.clear();
+    resetStatus = 'all local data cleared — reload the app';
+  }
+
+  function reloadApp() {
+    window.location.reload();
   }
 
   $effect(() => {
@@ -208,6 +223,32 @@
             /></svg
           >
           about
+        </button>
+        <button
+          class="w-full flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors text-left"
+          class:bg-sidebar-accent={activeTab === "advanced"}
+          class:text-sidebar-accent-foreground={activeTab === "advanced"}
+          class:text-sidebar-foreground={activeTab !== "advanced"}
+          onclick={() => (activeTab = "advanced")}
+        >
+          <svg
+            class="w-4 h-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            ><path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+            /><path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+            /></svg
+          >
+          advanced
         </button>
       </nav>
 
@@ -375,6 +416,70 @@
               <h4 class="text-sm font-medium text-card-foreground mb-2">
                 built with ❤ by the agora team
               </h4>
+            </div>
+          </div>
+        {:else if activeTab === "advanced"}
+          <div class="space-y-6 max-w-md">
+            <!-- warning -->
+            <div class="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+              <p class="text-sm text-destructive font-medium mb-2">⚠️ danger zone</p>
+              <p class="text-xs text-muted-foreground">
+                these options are for debugging and testing. use with caution.
+              </p>
+            </div>
+
+            <!-- acknowledgement checkbox -->
+            <div class="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="acknowledge"
+                bind:checked={acknowledgeRisk}
+                class="mt-1 w-4 h-4 rounded border-border bg-muted"
+              />
+              <label for="acknowledge" class="text-sm text-muted-foreground">
+                i understand these options can cause data loss or reset the app
+              </label>
+            </div>
+
+            <!-- actions -->
+            <div class="space-y-3">
+              <Button
+                variant="outline"
+                class="w-full justify-start"
+                disabled={!acknowledgeRisk}
+                onclick={clearOnboarding}
+              >
+                clear onboarding data
+              </Button>
+              <Button
+                variant="outline"
+                class="w-full justify-start"
+                disabled={!acknowledgeRisk}
+                onclick={clearAllAppData}
+              >
+                reset all app data
+              </Button>
+              <Button
+                variant="outline"
+                class="w-full justify-start"
+                disabled={!acknowledgeRisk}
+                onclick={reloadApp}
+              >
+                reload app
+              </Button>
+            </div>
+
+            {#if resetStatus}
+              <div class="p-3 bg-primary/10 border border-primary/20 rounded text-sm text-primary">
+                {resetStatus}
+              </div>
+            {/if}
+
+            <!-- app info -->
+            <div class="pt-4 border-t border-border">
+              <h4 class="text-sm font-medium text-card-foreground mb-2">debug info</h4>
+              <p class="text-xs text-muted-foreground">api url: {apiUrl}</p>
+              <p class="text-xs text-muted-foreground">user id: {userId}</p>
             </div>
           </div>
         {/if}

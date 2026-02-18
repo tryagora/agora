@@ -14,7 +14,7 @@
 	let accessToken = $state('');
 	let isAuthenticated = $state(false);
 
-	async function setPresence(token: string, uid: string, presence: 'online' | 'offline') {
+	async function setPresence(token: string, uid: string, presence: 'online' | 'offline' | 'unavailable') {
 		try {
 			await fetch(`${apiUrl}/presence/set`, {
 				method: 'POST',
@@ -68,16 +68,54 @@
 		return () => window.removeEventListener('beforeunload', handleUnload);
 	});
 
-	// heartbeat: refresh the redis presence TTL every 2 minutes while logged in.
-	// the server-side TTL is 5 minutes, so this gives a 3-minute grace window
-	// before presence expires if the app crashes.
+	// idle detection + heartbeat
+	// - marks user as "unavailable" after 3 minutes of no mouse/keyboard activity
+	// - marks back to "online" immediately on any activity
+	// - heartbeats every 2 minutes to keep the redis TTL alive
 	$effect(() => {
 		if (!isAuthenticated) return;
 		const token = accessToken;
 		const uid = userId;
 		const url = apiUrl;
-		const interval = setInterval(() => setPresence(token, uid, 'online'), 120_000);
-		return () => clearInterval(interval);
+
+		const IDLE_MS = 3 * 60 * 1000; // 3 minutes
+		const HEARTBEAT_MS = 120_000;   // 2 minutes
+
+		let currentPresence: 'online' | 'unavailable' = 'online';
+		let idleTimer: ReturnType<typeof setTimeout>;
+		let heartbeat: ReturnType<typeof setInterval>;
+
+		function goIdle() {
+			if (currentPresence === 'unavailable') return;
+			currentPresence = 'unavailable';
+			setPresence(token, uid, 'unavailable');
+		}
+
+		function goActive() {
+			clearTimeout(idleTimer);
+			idleTimer = setTimeout(goIdle, IDLE_MS);
+			if (currentPresence === 'unavailable') {
+				currentPresence = 'online';
+				setPresence(token, uid, 'online');
+			}
+		}
+
+		// activity events to listen for
+		const events = ['mousemove', 'mousedown', 'keydown', 'pointerdown', 'scroll', 'touchstart'];
+		for (const e of events) window.addEventListener(e, goActive, { passive: true });
+
+		// start the idle countdown and heartbeat
+		idleTimer = setTimeout(goIdle, IDLE_MS);
+		heartbeat = setInterval(() => {
+			// only heartbeat if currently online — no need to keep refreshing unavailable TTL
+			if (currentPresence === 'online') setPresence(token, uid, 'online');
+		}, HEARTBEAT_MS);
+
+		return () => {
+			clearTimeout(idleTimer);
+			clearInterval(heartbeat);
+			for (const e of events) window.removeEventListener(e, goActive);
+		};
 	});
 </script>
 

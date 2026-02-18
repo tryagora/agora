@@ -56,4 +56,5 @@ fn router() -> Router<Arc<AppState>> {
         .merge(routes::friends::router())
         .merge(routes::users::router())
         .merge(routes::presence_ws::router())
+        .merge(routes::voice::router())
 }
