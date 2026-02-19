@@ -277,18 +277,18 @@ class LoadTester:
         self.session = session
         self.clients: List[AgoraClient] = []
         
-    async def run_test_suite(self, config: Dict):
-        """Run the complete test suite"""
+    async def run_test_suite(self, config: dict):
+        """run the complete test suite"""
         print("\n" + "="*70)
-        print(f"AGORA LOAD TEST SUITE - {datetime.now()}")
+        print(f"agora load test suite - {datetime.now()}")
         print("="*70)
-        print(f"API URL: {self.api_url}")
-        print(f"Homeserver: {self.homeserver_url}")
-        print(f"Config: {json.dumps(config, indent=2)}")
+        print(f"api url: {self.api_url}")
+        print(f"homeserver: {self.homeserver_url}")
+        print(f"config: {json.dumps(config, indent=2)}")
         print("="*70 + "\n")
         
         async with aiohttp.ClientSession() as http_session:
-            # Test 1: User Registration Stress Test
+            # test 1: user registration stress test
             if config.get('test_registration', True):
                 await self.test_registration_spam(
                     http_session,
@@ -296,7 +296,7 @@ class LoadTester:
                     concurrent=config.get('concurrent_users', 5)
                 )
             
-            # Test 2: Server Creation Spam
+            # test 2: server creation spam
             if config.get('test_server_creation', True):
                 await self.test_server_creation_spam(
                     http_session,
@@ -304,7 +304,7 @@ class LoadTester:
                     concurrent=config.get('concurrent_servers', 3)
                 )
             
-            # Test 3: Join/Leave Spam
+            # test 3: join/leave spam
             if config.get('test_join_leave', True):
                 await self.test_join_leave_spam(
                     http_session,
@@ -312,7 +312,7 @@ class LoadTester:
                     concurrent=config.get('concurrent_joiners', 5)
                 )
             
-            # Test 4: Message Spam
+            # test 4: message spam
             if config.get('test_messaging', True):
                 await self.test_message_spam(
                     http_session,
@@ -320,7 +320,7 @@ class LoadTester:
                     rooms=config.get('message_rooms', 3)
                 )
             
-            # Test 5: Mixed Load Test
+            # test 5: mixed load test
             if config.get('test_mixed_load', True):
                 await self.test_mixed_load(
                     http_session,
@@ -328,12 +328,12 @@ class LoadTester:
                     concurrent_users=config.get('concurrent_load_users', 10)
                 )
         
-        # Print results
+        # print results
         self.print_results()
     
     async def test_registration_spam(self, http_session: aiohttp.ClientSession, count: int, concurrent: int):
-        """Spam user registrations"""
-        print(f"\n📊 TEST 1: Registration Spam ({count} users, {concurrent} concurrent)...")
+        """spam user registrations"""
+        print(f"\ntest 1: registration spam ({count} users, {concurrent} concurrent)...")
         
         semaphore = asyncio.Semaphore(concurrent)
         
@@ -368,22 +368,22 @@ class LoadTester:
         await asyncio.gather(*tasks, return_exceptions=True)
         
         stats = self.session.get_stats("registration")
-        print(f"   ✅ Completed: {stats['count']} registrations")
-        print(f"   ⏱️  Avg latency: {stats['avg_ms']:.2f}ms")
-        print(f"   📈 Success rate: {stats['success_rate']:.1f}%")
-        print(f"   ❌ Errors: {stats['total_errors']}")
+        print(f"   completed: {stats['count']} registrations")
+        print(f"   avg latency: {stats['avg_ms']:.2f}ms")
+        print(f"   success rate: {stats['success_rate']:.1f}%")
+        print(f"   errors: {stats['total_errors']}")
     
     async def test_server_creation_spam(self, http_session: aiohttp.ClientSession, count: int, concurrent: int):
-        """Spam server creation"""
-        print(f"\n📊 TEST 2: Server Creation Spam ({count} servers, {concurrent} concurrent)...")
+        """spam server creation"""
+        print(f"\ntest 2: server creation spam ({count} servers, {concurrent} concurrent)...")
         
-        # Create a test user for server creation
+        # create a test user for server creation
         client = AgoraClient(self.api_url, self.homeserver_url, http_session)
         username = f"server_spammer_{int(time.time())}"
         success, _ = await client.register(username, "testpass123")
         
         if not success:
-            print("   ❌ Failed to create test user")
+            print("   failed to create test user")
             return
         
         semaphore = asyncio.Semaphore(concurrent)
@@ -410,16 +410,16 @@ class LoadTester:
         await asyncio.gather(*tasks, return_exceptions=True)
         
         stats = self.session.get_stats("server_creation")
-        print(f"   ✅ Created: {stats['count']} servers")
-        print(f"   ⏱️  Avg latency: {stats['avg_ms']:.2f}ms")
-        print(f"   📈 Success rate: {stats['success_rate']:.1f}%")
+        print(f"   created: {stats['count']} servers")
+        print(f"   avg latency: {stats['avg_ms']:.2f}ms")
+        print(f"   success rate: {stats['success_rate']:.1f}%")
     
     async def test_join_leave_spam(self, http_session: aiohttp.ClientSession, iterations: int, concurrent: int):
-        """Spam join and leave operations"""
-        print(f"\n📊 TEST 3: Join/Leave Spam ({iterations} iterations, {concurrent} concurrent)...")
+        """spam join and leave operations"""
+        print(f"\ntest 3: join/leave spam ({iterations} iterations, {concurrent} concurrent)...")
         
         if len(self.session.servers_created) < 3:
-            # Create some servers to join/leave
+            # create some servers to join/leave
             client = AgoraClient(self.api_url, self.homeserver_url, http_session)
             await client.register(f"jl_test_{int(time.time())}", "testpass123")
             for i in range(5):
@@ -427,7 +427,7 @@ class LoadTester:
                 if room_id:
                     self.session.servers_created.append(room_id)
         
-        # Create users for join/leave
+        # create users for join/leave
         users = []
         for i in range(min(concurrent * 2, 20)):
             client = AgoraClient(self.api_url, self.homeserver_url, http_session)
@@ -442,10 +442,10 @@ class LoadTester:
                 user = users[user_index % len(users)]
                 server_id = random.choice(self.session.servers_created)
                 
-                # Join
+                # join
                 metric_join = TestMetrics(operation="join", start_time=time.time())
                 try:
-                    # Use join endpoint through invite flow
+                    # use join endpoint through invite flow
                     url = f"{self.api_url}/rooms/join"
                     payload = {
                         "access_token": user.access_token,
@@ -461,10 +461,10 @@ class LoadTester:
                     metric_join.end_time = time.time()
                     self.session.add_metric(metric_join)
                 
-                # Small delay to simulate real usage
+                # small delay to simulate real usage
                 await asyncio.sleep(random.uniform(0.1, 0.5))
                 
-                # Leave
+                # leave
                 metric_leave = TestMetrics(operation="leave", start_time=time.time())
                 try:
                     success, error = await user.leave_server(server_id)
@@ -482,16 +482,16 @@ class LoadTester:
         
         join_stats = self.session.get_stats("join")
         leave_stats = self.session.get_stats("leave")
-        print(f"   ✅ Join ops: {join_stats['count']} (avg {join_stats['avg_ms']:.2f}ms)")
-        print(f"   ✅ Leave ops: {leave_stats['count']} (avg {leave_stats['avg_ms']:.2f}ms)")
-        print(f"   📈 Join success: {join_stats['success_rate']:.1f}%")
-        print(f"   📈 Leave success: {leave_stats['success_rate']:.1f}%")
+        print(f"   join ops: {join_stats['count']} (avg {join_stats['avg_ms']:.2f}ms)")
+        print(f"   leave ops: {leave_stats['count']} (avg {leave_stats['avg_ms']:.2f}ms)")
+        print(f"   join success: {join_stats['success_rate']:.1f}%")
+        print(f"   leave success: {leave_stats['success_rate']:.1f}%")
     
     async def test_message_spam(self, http_session: aiohttp.ClientSession, messages_per_room: int, rooms: int):
-        """Spam messages in rooms"""
-        print(f"\n📊 TEST 4: Message Spam ({messages_per_room} msgs × {rooms} rooms)...")
+        """spam messages in rooms"""
+        print(f"\ntest 4: message spam ({messages_per_room} msgs x {rooms} rooms)...")
         
-        # Create test servers with text channels
+        # create test servers with text channels
         client = AgoraClient(self.api_url, self.homeserver_url, http_session)
         await client.register(f"msg_spammer_{int(time.time())}", "testpass123")
         
@@ -504,17 +504,17 @@ class LoadTester:
                     text_channels.append(channel_id)
         
         if not text_channels:
-            print("   ❌ Failed to create test channels")
+            print("   failed to create test channels")
             return
         
-        print(f"   Created {len(text_channels)} test channels")
+        print(f"   created {len(text_channels)} test channels")
         
         async def spam_channel(channel_id: str):
             for msg_idx in range(messages_per_room):
                 metric = TestMetrics(operation="message_send", start_time=time.time())
                 
                 try:
-                    content = f"Test message {msg_idx}: {''.join(random.choices(string.ascii_letters, k=50))}"
+                    content = f"test message {msg_idx}: {''.join(random.choices(string.ascii_letters, k=50))}"
                     success, error = await client.send_message(channel_id, content)
                     metric.success = success
                     if error:
@@ -527,26 +527,26 @@ class LoadTester:
                     metric.end_time = time.time()
                     self.session.add_metric(metric)
                 
-                # Small delay to avoid overwhelming
+                # small delay to avoid overwhelming
                 await asyncio.sleep(0.01)
         
         await asyncio.gather(*[spam_channel(ch) for ch in text_channels])
         
         stats = self.session.get_stats("message_send")
-        print(f"   ✅ Sent: {self.session.messages_sent} messages")
-        print(f"   ⏱️  Avg latency: {stats['avg_ms']:.2f}ms")
-        print(f"   📈 Success rate: {stats['success_rate']:.1f}%")
-        print(f"   🚀 Throughput: {self.session.messages_sent / (stats['avg_ms'] * stats['count'] / 1000):.1f} msg/sec")
+        print(f"   sent: {self.session.messages_sent} messages")
+        print(f"   avg latency: {stats['avg_ms']:.2f}ms")
+        print(f"   success rate: {stats['success_rate']:.1f}%")
+        print(f"   throughput: {self.session.messages_sent / (stats['avg_ms'] * stats['count'] / 1000):.1f} msg/sec")
     
     async def test_mixed_load(self, http_session: aiohttp.ClientSession, duration_seconds: int, concurrent_users: int):
-        """Run mixed load for a duration"""
-        print(f"\n📊 TEST 5: Mixed Load Test ({duration_seconds}s with {concurrent_users} concurrent users)...")
+        """run mixed load for a duration"""
+        print(f"\ntest 5: mixed load test ({duration_seconds}s with {concurrent_users} concurrent users)...")
         
-        # Setup: Create servers and users
+        # setup: create servers and users
         test_servers = []
         test_users = []
         
-        # Create servers
+        # create servers
         setup_client = AgoraClient(self.api_url, self.homeserver_url, http_session)
         await setup_client.register(f"mixed_setup_{int(time.time())}", "testpass123")
         for i in range(5):
@@ -555,12 +555,12 @@ class LoadTester:
                 cid, _ = await setup_client.create_channel("general", sid, "text")
                 test_servers.append({"server": sid, "channel": cid})
         
-        # Create users
+        # create users
         for i in range(concurrent_users):
             client = AgoraClient(self.api_url, self.homeserver_url, http_session)
             success, _ = await client.register(f"mixed_user_{i}_{int(time.time())}", "testpass123")
             if success:
-                # Join a random server
+                # join a random server
                 server = random.choice(test_servers)
                 url = f"{self.api_url}/rooms/join"
                 payload = {"access_token": client.access_token, "room_id_or_alias": server["server"]}
@@ -568,12 +568,12 @@ class LoadTester:
                     if resp.status == 200:
                         test_users.append({"client": client, "server": server})
         
-        print(f"   Setup: {len(test_users)} users in {len(test_servers)} servers")
+        print(f"   setup: {len(test_users)} users in {len(test_servers)} servers")
         
         start_time = time.time()
         operation_count = 0
         
-        async def random_operation(user_data: Dict):
+        async def random_operation(user_data: dict):
             nonlocal operation_count
             client = user_data["client"]
             server = user_data["server"]
@@ -586,7 +586,7 @@ class LoadTester:
                     if op == "message":
                         success, _ = await client.send_message(
                             server["channel"], 
-                            f"Load test msg {operation_count}"
+                            f"load test msg {operation_count}"
                         )
                         metric.success = success
                     elif op == "sync":
@@ -608,13 +608,13 @@ class LoadTester:
         await asyncio.gather(*[random_operation(u) for u in test_users])
         
         total_time = time.time() - start_time
-        print(f"   ✅ Completed {operation_count} operations in {total_time:.1f}s")
-        print(f"   🚀 Throughput: {operation_count/total_time:.1f} ops/sec")
+        print(f"   completed {operation_count} operations in {total_time:.1f}s")
+        print(f"   throughput: {operation_count/total_time:.1f} ops/sec")
     
     def print_results(self):
-        """Print final test results"""
+        """print final test results"""
         print("\n" + "="*70)
-        print("TEST RESULTS SUMMARY")
+        print("test results summary")
         print("="*70)
         
         operations = ["registration", "server_creation", "join", "leave", "message_send", "mixed_message", "mixed_sync", "mixed_members"]
@@ -622,46 +622,46 @@ class LoadTester:
         for op in operations:
             stats = self.session.get_stats(op)
             if stats['count'] > 0:
-                print(f"\n📊 {op.upper().replace('_', ' ')}")
-                print(f"   Count: {stats['count']}")
-                print(f"   Success: {stats['success_rate']:.1f}% ({stats['count'] - stats['total_errors']}/{stats['count']})")
-                print(f"   Latency: avg={stats['avg_ms']:.2f}ms, median={stats['median_ms']:.2f}ms")
+                print(f"\n{op.upper().replace('_', ' ')}")
+                print(f"   count: {stats['count']}")
+                print(f"   success: {stats['success_rate']:.1f}% ({stats['count'] - stats['total_errors']}/{stats['count']})")
+                print(f"   latency: avg={stats['avg_ms']:.2f}ms, median={stats['median_ms']:.2f}ms")
                 print(f"            min={stats['min_ms']:.2f}ms, max={stats['max_ms']:.2f}ms")
                 if stats['stddev_ms'] > 0:
-                    print(f"   StdDev: {stats['stddev_ms']:.2f}ms")
+                    print(f"   stddev: {stats['stddev_ms']:.2f}ms")
         
         print("\n" + "="*70)
-        print(f"✅ Test suite completed at {datetime.now()}")
+        print(f"test suite completed at {datetime.now()}")
         print("="*70)
 
 
 class DockerLogMonitor:
-    """Monitor Docker logs in real-time"""
+    """monitor docker logs in real-time"""
     
-    def __init__(self, services: List[str]):
+    def __init__(self, services: list[str]):
         self.services = services
         self.running = False
         self.threads = []
         self.log_queue = queue.Queue()
         
     def start(self):
-        """Start monitoring logs"""
+        """start monitoring logs"""
         self.running = True
         for service in self.services:
             t = threading.Thread(target=self._monitor_service, args=(service,))
             t.daemon = True
             t.start()
             self.threads.append(t)
-        print(f"\n🐳 Started monitoring Docker logs for: {', '.join(self.services)}\n")
+        print(f"\nstarted monitoring docker logs for: {', '.join(self.services)}\n")
     
     def stop(self):
-        """Stop monitoring"""
+        """stop monitoring"""
         self.running = False
         for t in self.threads:
             t.join(timeout=2)
     
     def _monitor_service(self, service: str):
-        """Monitor a single service"""
+        """monitor a single service"""
         try:
             process = subprocess.Popen(
                 ["docker", "logs", "-f", f"--tail=10", f"agora_{service}" if not service.startswith("agora_") else service],
@@ -677,46 +677,46 @@ class DockerLogMonitor:
                 else:
                     break
         except Exception as e:
-            self.log_queue.put((service, f"ERROR: {e}"))
+            self.log_queue.put((service, f"error: {e}"))
     
     def print_recent_logs(self, lines: int = 50):
-        """Print recent logs from queue"""
-        print(f"\n📋 Recent Docker Logs (last {lines} lines per service):")
+        """print recent logs from queue"""
+        print(f"\nrecent docker logs (last {lines} lines per service):")
         print("-"*70)
         
-        # Group logs by service
-        logs_by_service: Dict[str, List[str]] = {s: [] for s in self.services}
+        # group logs by service
+        logs_by_service: dict[str, list[str]] = {s: [] for s in self.services}
         
-        # Drain queue
+        # drain queue
         while not self.log_queue.empty():
             service, line = self.log_queue.get()
             if service in logs_by_service:
                 logs_by_service[service].append(line)
         
-        # Print grouped
+        # print grouped
         for service, logs in logs_by_service.items():
-            print(f"\n📝 {service.upper()} (showing last {min(lines, len(logs))} of {len(logs)}):")
+            print(f"\n{service.upper()} (showing last {min(lines, len(logs))} of {len(logs)}):")
             for line in logs[-lines:]:
                 print(f"   {line}")
 
 
 async def main():
-    parser = argparse.ArgumentParser(description='Agora Load Test Suite')
-    parser.add_argument('--api-url', default='http://localhost:3000', help='Agora API URL')
-    parser.add_argument('--homeserver', default='http://localhost:8448', help='Matrix homeserver URL')
-    parser.add_argument('--registration-count', type=int, default=10, help='Number of registrations to test')
-    parser.add_argument('--server-count', type=int, default=20, help='Number of servers to create')
-    parser.add_argument('--join-leave-iterations', type=int, default=50, help='Join/leave iterations')
-    parser.add_argument('--message-count', type=int, default=100, help='Messages per room')
-    parser.add_argument('--load-duration', type=int, default=60, help='Mixed load test duration (seconds)')
-    parser.add_argument('--concurrent-users', type=int, default=10, help='Concurrent users for load test')
-    parser.add_argument('--monitor-docker', action='store_true', help='Monitor Docker logs during tests')
+    parser = argparse.ArgumentParser(description='agora load test suite')
+    parser.add_argument('--api-url', default='http://localhost:3000', help='agora api url')
+    parser.add_argument('--homeserver', default='http://localhost:8448', help='matrix homeserver url')
+    parser.add_argument('--registration-count', type=int, default=10, help='number of registrations to test')
+    parser.add_argument('--server-count', type=int, default=20, help='number of servers to create')
+    parser.add_argument('--join-leave-iterations', type=int, default=50, help='join/leave iterations')
+    parser.add_argument('--message-count', type=int, default=100, help='messages per room')
+    parser.add_argument('--load-duration', type=int, default=60, help='mixed load test duration (seconds)')
+    parser.add_argument('--concurrent-users', type=int, default=10, help='concurrent users for load test')
+    parser.add_argument('--monitor-docker', action='store_true', help='monitor docker logs during tests')
     parser.add_argument('--skip', nargs='+', choices=['registration', 'servers', 'joinleave', 'messages', 'mixed'], 
-                       help='Skip specific tests')
+                       help='skip specific tests')
     
     args = parser.parse_args()
     
-    # Configuration
+    # configuration
     config = {
         'test_registration': 'registration' not in (args.skip or []),
         'test_server_creation': 'servers' not in (args.skip or []),
@@ -732,26 +732,26 @@ async def main():
         'concurrent_load_users': args.concurrent_users,
     }
     
-    # Start Docker monitoring if requested
+    # start docker monitoring if requested
     docker_monitor = None
     if args.monitor_docker:
         docker_monitor = DockerLogMonitor(['conduit', 'agora_livekit', 'api'])
         docker_monitor.start()
     
     try:
-        # Run tests
+        # run tests
         session = TestSession()
         tester = LoadTester(args.api_url, args.homeserver, session)
         await tester.run_test_suite(config)
         
-        # Print Docker logs if monitoring
+        # print docker logs if monitoring
         if docker_monitor:
             docker_monitor.print_recent_logs()
         
     except KeyboardInterrupt:
-        print("\n\n⚠️  Test interrupted by user")
+        print("\n\ntest interrupted by user")
     except Exception as e:
-        print(f"\n\n❌ Test failed with error: {e}")
+        print(f"\n\ntest failed with error: {e}")
         import traceback
         traceback.print_exc()
     finally:

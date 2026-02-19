@@ -36,48 +36,48 @@ class DelayTester:
         
     async def test_voice_disconnect_delay(self) -> List[TimingResult]:
         """
-        Test: How long does it take for participant list to update after disconnect?
-        Expected: < 500ms
+        test: how long does it take for participant list to update after disconnect?
+        expected: < 500ms
         """
-        print("\n🎤 Testing voice disconnect timing...")
+        print("\ntesting voice disconnect timing...")
         results = []
         
-        # Create test user
+        # create test user
         user1 = await self.create_user("voice_test_1")
         user2 = await self.create_user("voice_test_2")
         
         if not user1 or not user2:
-            print("   ❌ Failed to create test users")
+            print("   failed to create test users")
             return results
         
-        # Create server with voice channel
+        # create server with voice channel
         server_id = await self.create_server(user1["token"], "VoiceDelayTest")
         channel_id = await self.create_channel(user1["token"], server_id, "voice-test", "voice")
         
         if not channel_id:
-            print("   ❌ Failed to create voice channel")
+            print("   failed to create voice channel")
             return results
         
-        # User 2 joins voice
+        # user 2 joins voice
         await self.join_room(user2["token"], channel_id)
-        await asyncio.sleep(1)  # Give time for join
+        await asyncio.sleep(1)  # give time for join
         
-        # Measure time for disconnect to reflect
+        # measure time for disconnect to reflect
         start = time.time()
         
-        # Simulate disconnect by leaving
+        # simulate disconnect by leaving
         await self.leave_room(user2["token"], channel_id)
         
-        # Poll until user disappears
-        max_wait = 5.0  # Max 5 seconds
-        check_interval = 0.05  # Check every 50ms
+        # poll until user disappears
+        max_wait = 5.0  # max 5 seconds
+        check_interval = 0.05  # check every 50ms
         elapsed = 0
         
         while elapsed < max_wait:
             await asyncio.sleep(check_interval)
             elapsed += check_interval
             
-            # Check participants
+            # check participants
             participants = await self.get_voice_participants(channel_id)
             if user2["user_id"] not in participants:
                 break
@@ -93,40 +93,40 @@ class DelayTester:
         )
         results.append(result)
         
-        status = "✅" if success else "❌"
-        print(f"   {status} Disconnect propagation: {actual_time:.1f}ms (target: <500ms)")
+        status = "pass" if success else "fail"
+        print(f"   {status} disconnect propagation: {actual_time:.1f}ms (target: <500ms)")
         
         return results
     
     async def test_message_sync_delay(self) -> List[TimingResult]:
         """
-        Test: How long for message to appear in sync?
-        Expected: < 1000ms
+        test: how long for message to appear in sync?
+        expected: < 1000ms
         """
-        print("\n💬 Testing message sync timing...")
+        print("\ntesting message sync timing...")
         results = []
         
-        # Create test users
+        # create test users
         sender = await self.create_user("msg_sender")
         receiver = await self.create_user("msg_receiver")
         
         if not sender or not receiver:
             return results
         
-        # Create DM room
+        # create dm room
         room_id = await self.create_dm_room(sender["token"], receiver["user_id"])
         
-        # Receiver starts listening
+        # receiver starts listening
         sync_token = None
         
-        # Send message
-        msg_content = f"Test message {time.time()}"
+        # send message
+        msg_content = f"test message {time.time()}"
         send_start = time.time()
         
         await self.send_message(sender["token"], room_id, msg_content)
         send_time = (time.time() - send_start) * 1000
         
-        # Wait for message to appear in receiver's sync
+        # wait for message to appear in receiver's sync
         max_wait = 5.0
         check_interval = 0.1
         elapsed = 0
@@ -165,32 +165,33 @@ class DelayTester:
         )
         results.append(result2)
         
-        print(f"   ✅ Send latency: {send_time:.1f}ms")
-        print(f"   {'✅' if found else '❌'} Sync propagation: {total_time:.1f}ms")
+        print(f"   send latency: {send_time:.1f}ms")
+        status = "pass" if found else "fail"
+        print(f"   {status} sync propagation: {total_time:.1f}ms")
         
         return results
     
     async def test_server_list_refresh(self) -> List[TimingResult]:
         """
-        Test: How long for new server to appear in room list?
-        Expected: < 500ms
+        test: how long for new server to appear in room list?
+        expected: < 500ms
         """
-        print("\n🏠 Testing server list refresh timing...")
+        print("\ntesting server list refresh timing...")
         results = []
         
         user = await self.create_user("server_refresh_test")
         if not user:
             return results
         
-        # Get initial list
+        # get initial list
         initial_rooms = await self.get_joined_rooms(user["token"])
         
-        # Create server
+        # create server
         start = time.time()
         server_id = await self.create_server(user["token"], f"RefreshTest_{int(time.time())}")
         creation_time = (time.time() - start) * 1000
         
-        # Wait for it to appear in list
+        # wait for it to appear in list
         max_wait = 3.0
         check_interval = 0.05
         elapsed = 0
@@ -215,17 +216,17 @@ class DelayTester:
         )
         results.append(result)
         
-        status = "✅" if result.success else "❌"
-        print(f"   {status} Server list refresh: {total_time:.1f}ms (target: <500ms)")
+        status = "pass" if result.success else "fail"
+        print(f"   {status} server list refresh: {total_time:.1f}ms (target: <500ms)")
         
         return results
     
     async def test_channel_creation_delay(self) -> List[TimingResult]:
         """
-        Test: How long for channel to be usable after creation?
-        Expected: < 300ms
+        test: how long for channel to be usable after creation?
+        expected: < 300ms
         """
-        print("\n📢 Testing channel creation timing...")
+        print("\ntesting channel creation timing...")
         results = []
         
         user = await self.create_user("channel_test")
@@ -234,12 +235,12 @@ class DelayTester:
         
         server_id = await self.create_server(user["token"], "ChannelTimingTest")
         
-        # Create channel and immediately try to send message
+        # create channel and immediately try to send message
         start = time.time()
         channel_id = await self.create_channel(user["token"], server_id, "test-chan", "text")
         creation_time = (time.time() - start) * 1000
         
-        # Try to send message immediately
+        # try to send message immediately
         msg_start = time.time()
         success = await self.send_message(user["token"], channel_id, "immediate message")
         msg_time = (time.time() - msg_start) * 1000
@@ -252,18 +253,19 @@ class DelayTester:
         )
         results.append(result)
         
-        print(f"   {'✅' if success else '❌'} Creation+usable: {creation_time + msg_time:.1f}ms")
+        status = "pass" if success else "fail"
+        print(f"   {status} creation+usable: {creation_time + msg_time:.1f}ms")
         
         return results
     
     async def test_concurrent_load_delays(self) -> List[TimingResult]:
         """
-        Test: How does latency degrade under concurrent load?
+        test: how does latency degrade under concurrent load?
         """
-        print("\n⚡ Testing latency under concurrent load...")
+        print("\ntesting latency under concurrent load...")
         results = []
         
-        # Create multiple users
+        # create multiple users
         users = []
         for i in range(5):
             user = await self.create_user(f"load_user_{i}")
@@ -271,33 +273,33 @@ class DelayTester:
                 users.append(user)
         
         if len(users) < 3:
-            print("   ❌ Not enough users created")
+            print("   not enough users created")
             return results
         
-        # Create shared server
+        # create shared server
         server_id = await self.create_server(users[0]["token"], "LoadTestServer")
         channel_id = await self.create_channel(users[0]["token"], server_id, "load-chan", "text")
         
-        # All users join
+        # all users join
         for user in users[1:]:
             await self.join_room(user["token"], server_id)
         
-        # Concurrent message sending
+        # concurrent message sending
         latencies = []
         
         async def send_and_measure(user):
             start = time.time()
-            await self.send_message(user["token"], channel_id, f"Load test from {user['user_id']}")
+            await self.send_message(user["token"], channel_id, f"load test from {user['user_id']}")
             return (time.time() - start) * 1000
         
-        # Send 10 rounds of concurrent messages
+        # send 10 rounds of concurrent messages
         for round_num in range(10):
             start_round = time.time()
             round_latencies = await asyncio.gather(*[
                 send_and_measure(user) for user in users
             ])
             latencies.extend(round_latencies)
-            await asyncio.sleep(0.1)  # Brief pause between rounds
+            await asyncio.sleep(0.1)  # brief pause between rounds
         
         avg_latency = mean(latencies)
         max_latency = max(latencies)
@@ -310,7 +312,7 @@ class DelayTester:
         )
         results.append(result)
         
-        print(f"   ✅ Concurrent messages: avg={avg_latency:.1f}ms, max={max_latency:.1f}ms")
+        print(f"   concurrent messages: avg={avg_latency:.1f}ms, max={max_latency:.1f}ms")
         
         return results
     
@@ -436,9 +438,9 @@ async def main():
     api_url = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:3000"
     
     print("\n" + "="*70)
-    print("AGORA DELAY AND TIMING TEST SUITE")
+    print("agora delay and timing test suite")
     print("="*70)
-    print(f"Testing against: {api_url}")
+    print(f"testing against: {api_url}")
     print("="*70)
     
     async with aiohttp.ClientSession() as session:
@@ -452,34 +454,34 @@ async def main():
             all_results.extend(await tester.test_channel_creation_delay())
             all_results.extend(await tester.test_concurrent_load_delays())
         except Exception as e:
-            print(f"\n❌ Test error: {e}")
+            print(f"\ntest error: {e}")
             import traceback
             traceback.print_exc()
         
-        # Summary
+        # summary
         print("\n" + "="*70)
-        print("TIMING TEST SUMMARY")
+        print("timing test summary")
         print("="*70)
         
         passed = sum(1 for r in all_results if r.success)
         failed = len(all_results) - passed
         
         for result in all_results:
-            status = "✅ PASS" if result.success else "❌ FAIL"
+            status = "pass" if result.success else "fail"
             print(f"\n{status} {result.operation}")
-            print(f"   Target: <{result.target_ms}ms")
-            print(f"   Actual: {result.actual_ms:.1f}ms")
+            print(f"   target: <{result.target_ms}ms")
+            print(f"   actual: {result.actual_ms:.1f}ms")
             if result.actual_ms > result.target_ms:
-                print(f"   ⚠️  EXCEEDED by {result.actual_ms - result.target_ms:.1f}ms")
+                print(f"   exceeded by {result.actual_ms - result.target_ms:.1f}ms")
         
         print("\n" + "="*70)
-        print(f"Results: {passed} passed, {failed} failed")
+        print(f"results: {passed} passed, {failed} failed")
         
         if failed == 0:
-            print("✅ All timing tests passed!")
+            print("all timing tests passed!")
             return 0
         else:
-            print("⚠️  Some timing targets not met")
+            print("some timing targets not met")
             return 1
 
 

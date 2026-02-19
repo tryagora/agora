@@ -10,30 +10,30 @@ import time
 
 
 async def smoke_test(api_url: str = "http://localhost:3000"):
-    """Run basic smoke tests"""
-    print("🧪 AGORA SMOKE TEST")
+    """run basic smoke tests"""
+    print("agora smoke test")
     print("="*50)
     
     async with aiohttp.ClientSession() as session:
         tests_passed = 0
         tests_failed = 0
         
-        # Test 1: Health check
-        print("\n1️⃣ Testing API health...")
+        # test 1: health check
+        print("\ntesting api health...")
         try:
             async with session.get(f"{api_url}/health") as resp:
                 if resp.status == 200:
-                    print("   ✅ API is healthy")
+                    print("   api is healthy")
                     tests_passed += 1
                 else:
-                    print(f"   ❌ API returned {resp.status}")
+                    print(f"   api returned {resp.status}")
                     tests_failed += 1
         except Exception as e:
-            print(f"   ❌ API connection failed: {e}")
+            print(f"   api connection failed: {e}")
             tests_failed += 1
         
-        # Test 2: User registration
-        print("\n2️⃣ Testing user registration...")
+        # test 2: user registration
+        print("\ntesting user registration...")
         username = f"smoke_test_{int(time.time())}"
         try:
             async with session.post(
@@ -44,11 +44,11 @@ async def smoke_test(api_url: str = "http://localhost:3000"):
                     data = await resp.json()
                     access_token = data.get("access_token")
                     user_id = data.get("user_id")
-                    print(f"   ✅ Registered user: {user_id}")
+                    print(f"   registered user: {user_id}")
                     tests_passed += 1
                     
-                    # Test 3: Server creation
-                    print("\n3️⃣ Testing server creation...")
+                    # test 3: server creation
+                    print("\ntesting server creation...")
                     async with session.post(
                         f"{api_url}/rooms/create",
                         json={"access_token": access_token, "name": "SmokeServer", "is_space": True}
@@ -56,11 +56,11 @@ async def smoke_test(api_url: str = "http://localhost:3000"):
                         if resp2.status == 200:
                             server_data = await resp2.json()
                             server_id = server_data.get("room_id")
-                            print(f"   ✅ Created server: {server_id}")
+                            print(f"   created server: {server_id}")
                             tests_passed += 1
                             
-                            # Test 4: Channel creation
-                            print("\n4️⃣ Testing channel creation...")
+                            # test 4: channel creation
+                            print("\ntesting channel creation...")
                             async with session.post(
                                 f"{api_url}/rooms/create",
                                 json={
@@ -72,11 +72,11 @@ async def smoke_test(api_url: str = "http://localhost:3000"):
                                 }
                             ) as resp3:
                                 if resp3.status == 200:
-                                    print("   ✅ Created text channel")
+                                    print("   created text channel")
                                     tests_passed += 1
                                     
-                                    # Test 5: Send message
-                                    print("\n5️⃣ Testing message sending...")
+                                    # test 5: send message
+                                    print("\ntesting message sending...")
                                     channel_data = await resp3.json()
                                     channel_id = channel_data.get("room_id")
                                     async with session.post(
@@ -88,26 +88,26 @@ async def smoke_test(api_url: str = "http://localhost:3000"):
                                         }
                                     ) as resp4:
                                         if resp4.status == 200:
-                                            print("   ✅ Sent message")
+                                            print("   sent message")
                                             tests_passed += 1
                                         else:
-                                            print(f"   ❌ Message failed: {resp4.status}")
+                                            print(f"   message failed: {resp4.status}")
                                             tests_failed += 1
                                 else:
-                                    print(f"   ❌ Channel creation failed: {resp3.status}")
+                                    print(f"   channel creation failed: {resp3.status}")
                                     tests_failed += 1
                         else:
-                            print(f"   ❌ Server creation failed: {resp2.status}")
+                            print(f"   server creation failed: {resp2.status}")
                             tests_failed += 1
                 else:
-                    print(f"   ❌ Registration failed: {resp.status}")
+                    print(f"   registration failed: {resp.status}")
                     tests_failed += 1
         except Exception as e:
-            print(f"   ❌ Registration error: {e}")
+            print(f"   registration error: {e}")
             tests_failed += 1
         
-        # Test 6: Sync
-        print("\n6️⃣ Testing sync endpoint...")
+        # test 6: sync
+        print("\ntesting sync endpoint...")
         if 'access_token' in dir() or 'access_token' in locals():
             try:
                 async with session.get(
@@ -115,25 +115,25 @@ async def smoke_test(api_url: str = "http://localhost:3000"):
                     params={"access_token": access_token}
                 ) as resp:
                     if resp.status == 200:
-                        print("   ✅ Sync working")
+                        print("   sync working")
                         tests_passed += 1
                     else:
-                        print(f"   ❌ Sync failed: {resp.status}")
+                        print(f"   sync failed: {resp.status}")
                         tests_failed += 1
             except Exception as e:
-                print(f"   ❌ Sync error: {e}")
+                print(f"   sync error: {e}")
                 tests_failed += 1
         else:
-            print("   ⏭️  Skipped (no access token)")
+            print("   skipped (no access token)")
     
-    # Results
+    # results
     print("\n" + "="*50)
-    print(f"RESULTS: {tests_passed} passed, {tests_failed} failed")
+    print(f"results: {tests_passed} passed, {tests_failed} failed")
     if tests_failed == 0:
-        print("✅ All smoke tests passed!")
+        print("all smoke tests passed!")
         return 0
     else:
-        print("❌ Some tests failed")
+        print("some tests failed")
         return 1
 
 

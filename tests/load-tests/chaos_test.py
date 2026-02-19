@@ -22,8 +22,8 @@ class ChaosMonkey:
         self.errors: List[str] = []
         
     async def spam_registrations(self, count: int):
-        """Rapid-fire registrations"""
-        print(f"💥 Spamming {count} rapid registrations...")
+        """rapid-fire registrations"""
+        print(f"spamming {count} rapid registrations...")
         
         async def register_one(i: int):
             try:
@@ -41,21 +41,21 @@ class ChaosMonkey:
                         self.tokens.append(data.get("access_token"))
                     else:
                         text = await resp.text()
-                        if "M_USER_IN_USE" not in text:  # Expected for duplicates
-                            self.errors.append(f"Registration {i}: {resp.status}")
+                        if "m_user_in_use" not in text:  # expected for duplicates
+                            self.errors.append(f"registration {i}: {resp.status}")
             except Exception as e:
-                self.errors.append(f"Registration {i}: {e}")
+                self.errors.append(f"registration {i}: {e}")
         
         await asyncio.gather(*[register_one(i) for i in range(count)])
-        print(f"   Created {len(self.tokens)} users, {len(self.errors)} errors")
+        print(f"   created {len(self.tokens)} users, {len(self.errors)} errors")
     
     async def concurrent_server_creation(self):
-        """Create many servers at once"""
+        """create many servers at once"""
         if not self.tokens:
-            print("⚠️  No tokens for server creation")
+            print("no tokens for server creation")
             return
             
-        print(f"💥 Creating servers with {len(self.tokens)} users concurrently...")
+        print(f"creating servers with {len(self.tokens)} users concurrently...")
         
         async def create_many(token: str, user_idx: int):
             for i in range(5):
@@ -69,34 +69,34 @@ class ChaosMonkey:
                             data = await resp.json()
                             self.servers.append(data.get("room_id"))
                 except Exception as e:
-                    self.errors.append(f"Server creation: {e}")
+                    self.errors.append(f"server creation: {e}")
         
         await asyncio.gather(*[
             create_many(token, i) for i, token in enumerate(self.tokens[:10])
         ])
-        print(f"   Created {len(self.servers)} servers")
+        print(f"   created {len(self.servers)} servers")
     
     async def rapid_join_leave(self, iterations: int):
-        """Join and leave rapidly"""
+        """join and leave rapidly"""
         if not self.tokens or not self.servers:
-            print("⚠️  No tokens or servers for join/leave")
+            print("no tokens or servers for join/leave")
             return
             
-        print(f"💥 Rapid join/leave ({iterations} iterations)...")
+        print(f"rapid join/leave ({iterations} iterations)...")
         
         async def jiggle(token: str):
             for _ in range(iterations):
                 server = random.choice(self.servers)
                 try:
-                    # Join
+                    # join
                     async with self.session.post(
                         f"{self.api_url}/rooms/join",
                         json={"access_token": token, "room_id_or_alias": server},
                         timeout=aiohttp.ClientTimeout(total=3)
                     ) as resp:
-                        pass  # Don't care about result
+                        pass  # don't care about result
                     
-                    # Immediate leave
+                    # immediate leave
                     async with self.session.post(
                         f"{self.api_url}/rooms/leave",
                         json={"access_token": token, "room_id": server},
@@ -105,26 +105,26 @@ class ChaosMonkey:
                         pass
                         
                 except Exception:
-                    pass  # Expected to have some failures
+                    pass  # expected to have some failures
         
         await asyncio.gather(*[
             jiggle(token) for token in self.tokens[:5]
         ])
-        print("   Join/leave chaos complete")
+        print("   join/leave chaos complete")
     
     async def malformed_requests(self):
-        """Send malformed data"""
-        print("💥 Sending malformed requests...")
+        """send malformed data"""
+        print("sending malformed requests...")
         
         malformations = [
-            # Missing required fields
+            # missing required fields
             {"url": f"{self.api_url}/auth/register", "json": {}},
             {"url": f"{self.api_url}/rooms/create", "json": {"access_token": "invalid"}},
-            # Invalid types
+            # invalid types
             {"url": f"{self.api_url}/rooms/create", "json": {"access_token": 123, "name": None}},
-            # Empty strings
+            # empty strings
             {"url": f"{self.api_url}/auth/register", "json": {"username": "", "password": ""}},
-            # Very long strings
+            # very long strings
             {"url": f"{self.api_url}/rooms/create", "json": {"access_token": "x"*10000, "name": "test"}},
         ]
         
@@ -135,24 +135,24 @@ class ChaosMonkey:
                     json=malformed["json"],
                     timeout=aiohttp.ClientTimeout(total=5)
                 ) as resp:
-                    # Should get 400, not crash
+                    # should get 400, not crash
                     if resp.status >= 500:
-                        self.errors.append(f"Server crash on malformed: {resp.status}")
+                        self.errors.append(f"server crash on malformed: {resp.status}")
             except Exception as e:
-                self.errors.append(f"Exception on malformed: {e}")
+                self.errors.append(f"exception on malformed: {e}")
         
-        print("   Malformed request testing complete")
+        print("   malformed request testing complete")
     
     async def race_condition_test(self):
-        """Try to create race conditions"""
-        print("💥 Testing race conditions...")
+        """try to create race conditions"""
+        print("testing race conditions...")
         
         if not self.tokens:
             return
             
         token = self.tokens[0]
         
-        # Try to create the same channel multiple times simultaneously
+        # try to create the same channel multiple times simultaneously
         async def create_duplicate(i: int):
             try:
                 async with self.session.post(
@@ -165,15 +165,15 @@ class ChaosMonkey:
                 return str(e)
         
         results = await asyncio.gather(*[create_duplicate(i) for i in range(10)])
-        print(f"   Race results: {set(results)}")
+        print(f"   race results: {set(results)}")
 
 
 async def run_chaos_tests(api_url: str):
-    """Run all chaos tests"""
-    print("\n🔥 AGORA CHAOS TESTS")
+    """run all chaos tests"""
+    print("\nagora chaos tests")
     print("="*60)
-    print("These tests deliberately try to break things.")
-    print("Some errors are expected and OK.")
+    print("these tests deliberately try to break things.")
+    print("some errors are expected and ok.")
     print("="*60 + "\n")
     
     async with aiohttp.ClientSession() as session:
@@ -186,21 +186,21 @@ async def run_chaos_tests(api_url: str):
         await monkey.race_condition_test()
         
         print("\n" + "="*60)
-        print("CHAOS TEST SUMMARY")
+        print("chaos test summary")
         print("="*60)
-        print(f"Total users created: {len(monkey.tokens)}")
-        print(f"Total servers created: {len(monkey.servers)}")
-        print(f"Errors encountered: {len(monkey.errors)}")
+        print(f"total users created: {len(monkey.tokens)}")
+        print(f"total servers created: {len(monkey.servers)}")
+        print(f"errors encountered: {len(monkey.errors)}")
         
         if monkey.errors:
-            print("\nSample errors:")
+            print("\nsample errors:")
             for err in monkey.errors[:5]:
                 print(f"   - {err}")
         
         if len(monkey.errors) < 10:
-            print("\n✅ System handled chaos reasonably well")
+            print("\nsystem handled chaos reasonably well")
         else:
-            print("\n⚠️  System showed stress under chaos")
+            print("\nsystem showed stress under chaos")
 
 
 if __name__ == '__main__':

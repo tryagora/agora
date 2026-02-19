@@ -1,109 +1,125 @@
-# Agora Test Suite
+# agora test suite
 
-Comprehensive testing suite for Agora including load tests, smoke tests, and chaos tests with Docker log monitoring.
+comprehensive testing suite for agora including load tests, smoke tests, and chaos tests with docker log monitoring.
 
-## Quick Start
+## quick start
 
 ```bash
-# Make sure services are running
+# make sure services are running
 docker-compose up -d
 
-# Run smoke tests (quick validation)
-./tests/run-tests.sh smoke
+# run smoke tests (quick validation)
+python tests/run_tests.py smoke
 
-# Run load tests
-./tests/run-tests.sh load
+# run load tests
+python tests/run_tests.py load
 
-# Run chaos tests (try to break things)
-./tests/run-tests.sh chaos
+# run chaos tests (try to break things)
+python tests/run_tests.py chaos
 
-# Run everything
-./tests/run-tests.sh all
+# run delay/timing tests
+python tests/run_tests.py delay
+
+# run everything
+python tests/run_tests.py all
 ```
 
-## Test Types
+on windows, you can also use the batch file:
+```batch
+tests\run_tests.bat smoke
+```
 
-### 1. Smoke Tests (`smoke_test.py`)
-Quick validation that basic operations work:
-- API health check
-- User registration
-- Server creation
-- Channel creation
-- Message sending
-- Sync endpoint
+## test types
 
-**Time:** ~10 seconds
+### 1. smoke tests (smoke_test.py)
+quick validation that basic operations work:
+- api health check
+- user registration
+- server creation
+- channel creation
+- message sending
+- sync endpoint
 
-### 2. Load Tests (`agora_test_suite.py`)
-Full performance testing:
-- **Registration Spam**: Create many users concurrently
-- **Server Creation Spam**: Create many servers
-- **Join/Leave Spam**: Rapid join/leave operations
-- **Message Spam**: Send many messages
-- **Mixed Load**: Realistic concurrent usage
+**time:** ~10 seconds
 
-**Metrics tracked:**
-- Latency (avg, median, min, max, stddev)
-- Success rate
-- Error count
-- Throughput (ops/sec)
+### 2. load tests (agora_test_suite.py)
+full performance testing:
+- **registration spam**: create many users concurrently
+- **server creation spam**: create many servers
+- **join/leave spam**: rapid join/leave operations
+- **message spam**: send many messages
+- **mixed load**: realistic concurrent usage
 
-### 3. Chaos Tests (`chaos_test.py`)
-Deliberately try to break things:
-- Rapid-fire registrations
-- Concurrent server creation
-- Rapid join/leave cycles
-- Malformed request handling
-- Race condition testing
+**metrics tracked:**
+- latency (avg, median, min, max, stddev)
+- success rate
+- error count
+- throughput (ops/sec)
 
-## Configuration
+### 3. chaos tests (chaos_test.py)
+deliberately try to break things:
+- rapid-fire registrations
+- concurrent server creation
+- rapid join/leave cycles
+- malformed request handling
+- race condition testing
 
-### Environment Variables
+### 4. delay tests (delay_test.py)
+test timing-specific scenarios:
+- voice disconnect propagation
+- message sync delays
+- server list refresh timing
+- channel creation delays
+- latency under concurrent load
+
+## configuration
+
+### environment variables
 
 ```bash
-# Service endpoints
-export API_URL=http://localhost:3000
-export HOMESERVER=http://localhost:8448
+# service endpoints
+export api_url=http://localhost:3000
+export homeserver=http://localhost:8448
 
-# Load test parameters
-export REGISTRATION_COUNT=100
-export SERVER_COUNT=50
-export LOAD_DURATION=120
-export CONCURRENT_USERS=20
+# load test parameters
+export registration_count=100
+export server_count=50
+export load_duration=120
+export concurrent_users=20
 ```
 
-### Test Parameters
+### test parameters
 
-**Smoke Test:**
-- Single user flow through all operations
+**smoke test:**
+- single user flow through all operations
 
-**Load Test (default):**
+**load test (default):**
 - 10 user registrations
 - 20 server creations
 - 50 join/leave iterations
 - 100 messages per room (3 rooms)
 - 60 seconds mixed load with 10 concurrent users
 
-**Load Test (stress):**
+**load test (stress):**
 ```bash
-REGISTRATION_COUNT=500 SERVER_COUNT=200 LOAD_DURATION=300 CONCURRENT_USERS=50 ./tests/run-tests.sh load
+python tests/run_tests.py load --registration-count 500 --server-count 200 --load-duration 300 --concurrent-users 50
 ```
 
-**Chaos Test:**
+**chaos test:**
 - 50 rapid registrations
-- Concurrent server creation from multiple users
+- concurrent server creation from multiple users
 - 20 rapid join/leave cycles per user
-- Malformed requests
-- Race condition attempts
+- malformed requests
+- race condition attempts
 
-## Python Direct Usage
+## python direct usage
 
 ```bash
-# Install dependencies
+# install dependencies
 pip install aiohttp
 
-# Run specific test with custom parameters
-python3 tests/load-tests/agora_test_suite.py \
+# run specific test with custom parameters
+python tests/load-tests/agora_test_suite.py \
     --api-url http://localhost:3000 \
     --homeserver http://localhost:8448 \
     --registration-count 100 \
@@ -112,149 +128,149 @@ python3 tests/load-tests/agora_test_suite.py \
     --concurrent-users 20 \
     --monitor-docker
 
-# Skip specific tests
-python3 tests/load-tests/agora_test_suite.py \
+# skip specific tests
+python tests/load-tests/agora_test_suite.py \
     --skip registration servers \
     --load-duration 60
 
-# Just smoke test
-python3 tests/load-tests/smoke_test.py http://localhost:3000
+# just smoke test
+python tests/load-tests/smoke_test.py http://localhost:3000
 
-# Just chaos
-python3 tests/load-tests/chaos_test.py http://localhost:3000
+# just chaos
+python tests/load-tests/chaos_test.py http://localhost:3000
+
+# just delay tests
+python tests/load-tests/delay_test.py http://localhost:3000
 ```
 
-## Docker Log Monitoring
+## docker log monitoring
 
-The test suite can monitor Docker logs during tests to catch errors:
+the test suite can monitor docker logs during tests to catch errors:
 
 ```bash
-# Monitor logs during load test
-python3 tests/load-tests/agora_test_suite.py --monitor-docker
+# monitor logs during load test
+python tests/run_tests.py load --monitor-docker
 
-# The shell script always monitors logs
-./tests/run-tests.sh load
+# the python script always supports log monitoring
+python tests/run_tests.py load
 ```
 
-Logs are collected for:
-- `agora_conduit` (Matrix homeserver)
-- `agora_livekit` (Voice/video)
-- API logs (from test output)
+logs are collected for:
+- `agora_conduit` (matrix homeserver)
+- `agora_livekit` (voice/video)
+- api logs (from test output)
 
-## Interpreting Results
+## interpreting results
 
-### Success Metrics
+### success metrics
 
-**Acceptable performance:**
-- Registration: < 500ms avg
-- Server creation: < 300ms avg
-- Message sending: < 100ms avg
-- Sync: < 200ms avg
-- Success rate: > 95%
+**acceptable performance:**
+- registration: < 500ms avg
+- server creation: < 300ms avg
+- message sending: < 100ms avg
+- sync: < 200ms avg
+- success rate: > 95%
 
-**Warning signs:**
-- Success rate < 90%
-- Latency increasing over time
-- DTLS/ICE errors in LiveKit logs
-- Conduit "M_NOT_FOUND" errors
+**warning signs:**
+- success rate < 90%
+- latency increasing over time
+- dtls/ice errors in livekit logs
+- conduit "m_not_found" errors
 
-**Critical issues:**
-- Server crashes (500 errors)
-- Connection timeouts
-- Database connection errors
-- Memory exhaustion
+**critical issues:**
+- server crashes (500 errors)
+- connection timeouts
+- database connection errors
+- memory exhaustion
 
-### Common Issues
+### common issues
 
-**401 Unauthorized from LiveKit:**
-- Check LiveKit API key/secret match between backend and livekit.yaml
-- Verify admin JWT is being generated correctly
+**401 unauthorized from livekit:**
+- check livekit api key/secret match between backend and livekit.yaml
+- verify admin jwt is being generated correctly
 
-**Connection timeouts:**
-- Services may be overloaded
-- Check Docker resource limits
-- Reduce concurrent user count
+**connection timeouts:**
+- services may be overloaded
+- check docker resource limits
+- reduce concurrent user count
 
-**Matrix errors (M_NOT_FOUND, M_FORBIDDEN):**
-- Usually expected during leave operations
-- OK if success rate is still high
+**matrix errors (m_not_found, m_forbidden):**
+- usually expected during leave operations
+- ok if success rate is still high
 
-## CI/CD Integration
+## ci/cd integration
 
 ```yaml
-# Example GitHub Actions
-- name: Run Smoke Tests
+# example github actions
+- name: run smoke tests
   run: |
-    ./tests/run-tests.sh smoke
+    python tests/run_tests.py smoke
     
-- name: Run Load Tests
-  env:
-    REGISTRATION_COUNT: 50
-    SERVER_COUNT: 20
-    LOAD_DURATION: 60
+- name: run load tests
   run: |
-    ./tests/run-tests.sh load
+    python tests/run_tests.py load --registration-count 50 --server-count 20 --load-duration 60
 ```
 
-## Adding New Tests
+## adding new tests
 
-1. Add test method to `LoadTester` class in `agora_test_suite.py`
-2. Add configuration option to argparse
-3. Call from `run_test_suite`
-4. Update this README
+1. add test method to `LoadTester` class in `agora_test_suite.py`
+2. add configuration option to argparse
+3. call from `run_test_suite`
+4. update this readme
 
-Example:
+example:
 ```python
 async def test_my_feature(self, http_session, count):
-    print(f"\n📊 Testing my feature ({count} operations)...")
+    print(f"\ntesting my feature ({count} operations)...")
     metric = TestMetrics(operation="my_feature", start_time=time.time())
     # ... test code ...
     self.session.add_metric(metric)
 ```
 
-## Troubleshooting
+## troubleshooting
 
-**"API is not responding"**
-- Start backend: `cargo run --manifest-path backend/api/Cargo.toml`
-- Check API_URL environment variable
+**"api is not responding"**
+- start backend: `cargo run --manifest-path backend/api/cargo.toml`
+- check api_url environment variable
 
-**"Conduit is not responding"**
-- Start Docker services: `docker-compose up -d`
-- Check conduit is healthy: `docker-compose ps`
+**"conduit is not responding"**
+- start docker services: `docker-compose up -d`
+- check conduit is healthy: `docker-compose ps`
 
-**Import errors**
-- Install Python dependencies: `pip install aiohttp`
+**import errors**
+- install python dependencies: `pip install aiohttp`
 
-**Permission denied on run-tests.sh**
-- Make executable: `chmod +x tests/run-tests.sh`
+**permission denied on run_tests.py**
+- make executable: `chmod +x tests/run_tests.py` (linux/mac)
+- on windows, use `python tests/run_tests.py` instead
 
-## Test Data Cleanup
+## test data cleanup
 
-Tests create real users and servers. To clean up:
+tests create real users and servers. to clean up:
 
 ```bash
-# Stop and remove containers (destroys data)
+# stop and remove containers (destroys data)
 docker-compose down -v
 
-# Or manually delete test users via API
-# (TODO: add cleanup endpoint)
+# or manually delete test users via api
+# (todo: add cleanup endpoint)
 ```
 
-## Performance Baselines
+## performance baselines
 
-Measured on:
-- CPU: Intel i7-12700H
-- RAM: 32GB
-- Docker Desktop with WSL2
-- Local development setup
+measured on:
+- cpu: intel i7-12700h
+- ram: 32gb
+- docker desktop with wsl2
+- local development setup
 
-| Operation | Target Avg | Max |
+| operation | target avg | max |
 |-----------|-----------|-----|
-| Registration | 200ms | 1000ms |
-| Login | 150ms | 500ms |
-| Server Creation | 300ms | 1000ms |
-| Channel Creation | 200ms | 800ms |
-| Message Send | 50ms | 200ms |
-| Sync | 100ms | 500ms |
-| Join Room | 200ms | 1000ms |
-| Leave Room | 100ms | 500ms |
+| registration | 200ms | 1000ms |
+| login | 150ms | 500ms |
+| server creation | 300ms | 1000ms |
+| channel creation | 200ms | 800ms |
+| message send | 50ms | 200ms |
+| sync | 100ms | 500ms |
+| join room | 200ms | 1000ms |
+| leave room | 100ms | 500ms |
