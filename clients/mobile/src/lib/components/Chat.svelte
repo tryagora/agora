@@ -8,6 +8,8 @@
 	import SettingsModal from './SettingsModal.svelte';
 	import VoiceChannel from './VoiceChannel.svelte';
 	import IncomingCall from './IncomingCall.svelte';
+	import RaidAlert from './RaidAlert.svelte';
+	import HypeTrain from './HypeTrain.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import {
@@ -92,6 +94,19 @@
 	// call events we have already processed — prevents re-triggering on re-sync
 	const seenCallIds = new Set<string>();
 
+	// ── raid alert state ──────────────────────────────────────────────────────
+	let activeRaid = $state<{
+		raiderName: string;
+		message: string;
+		countdown: number;
+	} | null>(null);
+	const seenRaidIds = new Set<string>();
+
+	// ── hype train state ──────────────────────────────────────────────────────
+	// timestamps of messages in the current channel, kept rolling for hype detection
+	let channelMessageTimestamps = $state<number[]>([]);
+	let hypeActive = $state(false);
+
 	// use the server url configured during onboarding (or default)
 	const API_URL = $derived(apiUrl);
 
@@ -155,29 +170,44 @@
 							if (m.event_id) seenEventIds.add(m.event_id);
 						}
 
-						// split: call signaling events vs regular messages
-						const callEvents = newMessages.filter((m: any) => m.content_type === 'agora.call' || (m.content && typeof m.content === 'object' && (m.content as any).msgtype === 'agora.call'));
-						const textMessages = newMessages.filter((m: any) => m.content_type !== 'agora.call' && !(m.content && typeof m.content === 'object' && (m.content as any).msgtype === 'agora.call'));
+					// split: signaling events vs regular messages
+					const isMsgType = (m: any, t: string) =>
+						m.content_type === t || (m.content && typeof m.content === 'object' && (m.content as any).msgtype === t);
 
-						// process call events immediately (before storing messages)
-						if (initialSyncDone) {
-							for (const evt of callEvents) {
-								// the sync endpoint returns content as a string for text messages
-								// but agora.call messages have structured content
-								handleCallEvent({
-									...evt,
-									call_id: evt.call_id,
-									action: evt.action,
-									from: evt.from,
-									display_name: evt.display_name,
-								});
-							}
+					const callEvents = newMessages.filter((m: any) => isMsgType(m, 'agora.call'));
+					const raidEvents = newMessages.filter((m: any) => isMsgType(m, 'agora.raid'));
+					const textMessages = newMessages.filter((m: any) => !isMsgType(m, 'agora.call') && !isMsgType(m, 'agora.raid'));
+
+					// process signaling events immediately (before storing messages)
+					if (initialSyncDone) {
+						for (const evt of callEvents) {
+							handleCallEvent({
+								...evt,
+								call_id: evt.call_id,
+								action: evt.action,
+								from: evt.from,
+								display_name: evt.display_name,
+							});
 						}
+						for (const evt of raidEvents) {
+							handleRaidEvent(evt);
+						}
+					}
 
-						// cap total messages to 500 to prevent unbounded memory growth
-						// — old messages are evicted from the front, keeping the newest
-						const combined = [...messages, ...textMessages];
-						messages = combined.length > 500 ? combined.slice(combined.length - 500) : combined;
+					// update hype train timestamps for current channel
+					const now = Date.now();
+					const incomingForChannel = textMessages.filter((m: any) => m.room_id === selectedChannelId);
+					if (incomingForChannel.length > 0) {
+						const fresh = incomingForChannel.map((m: any) => m.timestamp ?? now);
+						// keep last 30 seconds of timestamps to avoid unbounded growth
+						const cutoff = now - 30_000;
+						channelMessageTimestamps = [...channelMessageTimestamps.filter(t => t > cutoff), ...fresh];
+					}
+
+					// cap total messages to 500 to prevent unbounded memory growth
+					// — old messages are evicted from the front, keeping the newest
+					const combined = [...messages, ...textMessages];
+					messages = combined.length > 500 ? combined.slice(combined.length - 500) : combined;
 						// fire notifications only after the initial history load
 						if (initialSyncDone) {
 							for (const m of textMessages) {
@@ -255,6 +285,9 @@
 	function handleSelectChannel(channelId: string, channelName?: string) {
 		selectedChannelId = channelId;
 		selectedChannelName = channelName || null;
+		// reset hype train when switching channels
+		channelMessageTimestamps = [];
+		hypeActive = false;
 		// if a voice channel is active from a previous selection, clear it
 		activeVoiceChannelId = null;
 		activeVoiceChannelName = null;
@@ -382,6 +415,40 @@
 		} finally {
 			loading = false;
 		}
+	}
+
+	// ── raid helpers ──────────────────────────────────────────────────────────
+
+	async function startRaid(message?: string, countdown?: number) {
+		if (!selectedChannelId) return;
+		const raiderName = userId.split(':')[0].replace('@', '');
+		try {
+			await fetch(`${API_URL}/rooms/raid`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					access_token: accessToken,
+					room_id: selectedChannelId,
+					raider_id: userId,
+					raider_name: raiderName,
+					message: message ?? 'RAID!',
+					countdown: countdown ?? 5,
+				}),
+			});
+		} catch (e) {
+			console.error('failed to send raid:', e);
+		}
+	}
+
+	function handleRaidEvent(evt: any) {
+		const eventId = evt.event_id || (evt.raider_id + evt.timestamp);
+		if (!eventId || seenRaidIds.has(eventId)) return;
+		seenRaidIds.add(eventId);
+		activeRaid = {
+			raiderName: evt.raider_name || 'someone',
+			message: evt.message || 'RAID!',
+			countdown: evt.countdown ?? 5,
+		};
 	}
 
 	// ── call signaling helpers ────────────────────────────────────────────────
@@ -663,6 +730,17 @@
 			{/if}
 			</div>
 			<div class="flex items-center gap-3">
+				<!-- raid button — server channels only, admin only -->
+				{#if selectedChannelId && !isDmMode && isAdmin}
+					<button
+						class="px-2 h-7 rounded text-xs font-black tracking-widest uppercase bg-red-900/40 text-red-400 hover:bg-red-900/70 border border-red-800/50 transition-colors"
+						onclick={() => startRaid()}
+						title="trigger a raid alert for everyone in this channel"
+						aria-label="raid"
+					>
+						⚔ RAID
+					</button>
+				{/if}
 				<!-- voice call button — only show in DM rooms -->
 				{#if selectedChannelId && isDmMode}
 					<button
@@ -696,6 +774,12 @@
 				/>
 			</div>
 		{/if}
+
+		<!-- hype train banner — appears above messages when chat is going fast -->
+		<HypeTrain
+			recentTimestamps={channelMessageTimestamps}
+			onHypeChange={(active) => { hypeActive = active; }}
+		/>
 
 		<!-- messages -->
 		<div class="flex-1 overflow-y-auto p-4 space-y-3 min-h-0" bind:this={messagesContainer}>
@@ -753,6 +837,16 @@
 	{/if}
 	{/if}
 	</div>
+
+	<!-- raid alert overlay — shown to everyone when a raid is triggered -->
+	{#if activeRaid}
+		<RaidAlert
+			raiderName={activeRaid.raiderName}
+			message={activeRaid.message}
+			countdown={activeRaid.countdown}
+			onDismiss={() => { activeRaid = null; }}
+		/>
+	{/if}
 
 	<!-- outgoing call overlay — shown while waiting for the other side to pick up -->
 	{#if outgoingCallId && outgoingCallRoomId}

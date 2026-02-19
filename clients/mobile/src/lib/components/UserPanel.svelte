@@ -12,6 +12,10 @@
 
 	let showStatusMenu = $state(false);
 	let displayname = $state<string | null>(null);
+	// ghost mode — user appears offline to everyone else but still receives sync
+	let ghostMode = $state(false);
+	// the presence value to restore when ghost mode is turned off
+	let preGhostPresence = $state<'online' | 'unavailable' | 'offline'>('online');
 
 	// live presence from shared store
 	let presence = $state('offline');
@@ -40,6 +44,10 @@
 
 	async function setStatus(p: 'online' | 'unavailable' | 'offline') {
 		showStatusMenu = false;
+		// turning off ghost mode when user explicitly sets a status
+		if (ghostMode) {
+			ghostMode = false;
+		}
 		try {
 			await fetch(`${apiUrl}/presence/set`, {
 				method: 'POST',
@@ -47,6 +55,28 @@
 				body: JSON.stringify({ access_token: accessToken, user_id: userId, presence: p })
 			});
 		} catch { /* best-effort */ }
+	}
+
+	async function toggleGhost() {
+		showStatusMenu = false;
+		if (ghostMode) {
+			// coming out of ghost — restore previous presence
+			ghostMode = false;
+			await setStatus(preGhostPresence);
+		} else {
+			// save current presence so we can restore it later
+			const cur = (presence === 'unavailable' ? 'unavailable' : presence === 'online' ? 'online' : 'offline') as 'online' | 'unavailable' | 'offline';
+			preGhostPresence = cur;
+			ghostMode = true;
+			// set presence to offline on the server so everyone else sees us as offline
+			try {
+				await fetch(`${apiUrl}/presence/set`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ access_token: accessToken, user_id: userId, presence: 'offline' })
+				});
+			} catch { /* best-effort */ }
+		}
 	}
 
 	const statusOptions: { label: string; value: 'online' | 'unavailable' | 'offline'; dot: string }[] = [
@@ -75,7 +105,12 @@
 		>
 			{initials(userId)}
 		</button>
-		<span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full {presenceDotClass(presence)} ring-2 ring-card pointer-events-none block"></span>
+		{#if ghostMode}
+			<!-- ghost badge replaces presence dot when ghosting -->
+			<span class="absolute -bottom-0.5 -right-0.5 text-sm leading-none pointer-events-none select-none" title="ghost mode active">👻</span>
+		{:else}
+			<span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full {presenceDotClass(presence)} ring-2 ring-card pointer-events-none block"></span>
+		{/if}
 
 		<!-- status dropdown -->
 		{#if showStatusMenu}
@@ -87,19 +122,41 @@
 				{#each statusOptions as opt}
 					<button
 						class="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-card-foreground hover:bg-muted transition-colors text-left"
-						class:font-semibold={presence === opt.value || (opt.value === 'unavailable' && presence === 'unavailable')}
+						class:font-semibold={!ghostMode && (presence === opt.value || (opt.value === 'unavailable' && presence === 'unavailable'))}
 						onclick={() => setStatus(opt.value)}
 						type="button"
 					>
 						<span class="w-2.5 h-2.5 rounded-full {opt.dot} flex-shrink-0"></span>
 						{opt.label}
-						{#if (opt.value === presence) || (opt.value === 'unavailable' && presence === 'unavailable')}
+						{#if !ghostMode && ((opt.value === presence) || (opt.value === 'unavailable' && presence === 'unavailable'))}
 							<svg class="ml-auto h-3.5 w-3.5 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
 							</svg>
 						{/if}
 					</button>
 				{/each}
+				<!-- divider -->
+				<div class="my-1 border-t border-border"></div>
+				<!-- ghost mode toggle -->
+				<button
+					class="w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+					class:font-semibold={ghostMode}
+					class:text-purple-400={ghostMode}
+					class:text-card-foreground={!ghostMode}
+					onclick={toggleGhost}
+					type="button"
+				>
+					<span class="text-base leading-none flex-shrink-0">👻</span>
+					<span>ghost mode</span>
+					{#if ghostMode}
+						<svg class="ml-auto h-3.5 w-3.5 text-purple-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+						</svg>
+					{/if}
+				</button>
+				{#if ghostMode}
+					<p class="px-3 pb-2 text-[10px] text-purple-400/70">you appear offline to others</p>
+				{/if}
 			</div>
 		{/if}
 	</div>
@@ -107,8 +164,8 @@
 	<!-- name + status label -->
 	<div class="flex-1 min-w-0">
 		<p class="text-sm font-semibold text-card-foreground truncate leading-tight">{displayname || shortName(userId)}</p>
-		<p class="text-xs text-muted-foreground truncate leading-tight capitalize">
-			{presence === 'unavailable' ? 'away' : presence}
+		<p class="text-xs truncate leading-tight capitalize" class:text-purple-400={ghostMode} class:text-muted-foreground={!ghostMode}>
+			{ghostMode ? '👻 ghost mode' : presence === 'unavailable' ? 'away' : presence}
 		</p>
 	</div>
 

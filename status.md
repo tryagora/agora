@@ -1,7 +1,7 @@
 ---
 # agora — project status
 
-last updated: 2026-02-19 (vibe rooms)
+last updated: 2026-02-19 (raid alert, hype train, ghost mode)
 
 ## completed
 - 2026-02-17 initialized git repository
@@ -72,6 +72,9 @@ last updated: 2026-02-19 (vibe rooms)
 - 2026-02-18 **GET /voice/participants** backend endpoint — calls LiveKit REST API with admin JWT; returns empty list gracefully if LiveKit unreachable
 
 - 2026-02-19 **vibe rooms** — one person sets a shared ambient vibe (rain/lo-fi/campfire/space/off) that all voice channel participants hear; vibe stored as agora.vibe Matrix state event; GET/POST /voice/vibe backend endpoints; VibeRoom.svelte component with Web Audio API procedural sound synthesis (no asset files); VoiceChannel.svelte polls vibe every 5s and renders VibeRoom picker; animated sound-wave status bar and active-vibe pulse animation; cross-fade between vibes; nothing like this exists in Discord, Element, or Signal
+- 2026-02-19 **raid alert** — one-click RAID button (admin-only, server channels) sends agora.raid Matrix message; sync loop detects it on every client; RaidAlert.svelte full-screen animated red overlay with countdown bar, bouncing siren icons, Web Audio API klaxon sound, shake animation; auto-dismisses when countdown hits 0; nothing like this exists in Discord or Signal
+- 2026-02-19 **hype train** — purely client-side message velocity detection (≥5 messages in 10s triggers hype mode); HypeTrain.svelte animated fire banner above messages with floating emoji particles (🔥⚡💥🎉🚀), energy meter bar, ascending chime sound; resets after 8s of quiet; resets on channel switch; no backend, no config needed
+- 2026-02-19 **ghost mode** — toggle in UserPanel status menu (👻); sets Matrix presence to offline on the server so others see you as offline, but your client still receives sync and you can read/send messages; ghost badge replaces presence dot; "ghost mode" label in status row; restore previous presence on exit; nothing like this exists in Element or Discord
 
 ## in progress
 

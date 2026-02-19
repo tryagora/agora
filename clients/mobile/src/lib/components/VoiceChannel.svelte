@@ -128,12 +128,6 @@
 			const r = new Room({
 				adaptiveStream: true,
 				disconnectOnPageLeave: true,
-				// on local dev behind Docker NAT, UDP ICE often fails on Windows/WSL2
-				// relay through TCP (port 7881) which works correctly through port mapping
-				rtcConfig: {
-					iceTransportPolicy: 'all',
-					iceCandidatePoolSize: 2,
-				},
 			});
 
 			// wire up event listeners before connecting

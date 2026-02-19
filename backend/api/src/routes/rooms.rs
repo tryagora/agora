@@ -24,6 +24,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/rooms/state", get(get_room_state))
         .route("/rooms/category/create", post(create_category))
         .route("/rooms/permissions", get(get_permissions).post(set_permissions))
+        .route("/rooms/raid", post(send_raid))
 }
 
 #[derive(Debug, Deserialize)]
@@ -754,6 +755,51 @@ async fn remove_space_child(
         Ok(_) => Ok(StatusCode::OK),
         Err(e) => {
             tracing::error!("failed to remove space child: {}", e);
+            Err(StatusCode::BAD_REQUEST)
+        }
+    }
+}
+
+// ── raid alert ────────────────────────────────────────────────────────────────
+// a raid message (agora.raid) sent into the server's channel triggers a
+// full-screen alert overlay on every member's client via the sync loop.
+
+#[derive(Debug, Deserialize)]
+pub struct RaidRequest {
+    pub access_token: String,
+    /// the channel room to broadcast the raid into
+    pub room_id: String,
+    pub raider_id: String,
+    pub raider_name: String,
+    /// optional custom message shown on the raid overlay (e.g. "let's go!!!")
+    pub message: Option<String>,
+    /// countdown seconds before the raid begins (default 5)
+    pub countdown: Option<u32>,
+}
+
+async fn send_raid(
+    state: State<Arc<AppState>>,
+    Json(req): Json<RaidRequest>,
+) -> Result<StatusCode, StatusCode> {
+    let mut matrix = MatrixClient::new(state.homeserver_url.clone());
+    matrix.access_token = Some(req.access_token);
+
+    let countdown = req.countdown.unwrap_or(5).min(30); // cap at 30 seconds
+    let message = req.message.unwrap_or_else(|| "RAID!".to_string());
+
+    let content = serde_json::json!({
+        "msgtype": "agora.raid",
+        "body": format!("[raid] {} is raiding!", req.raider_name),
+        "raider_id": req.raider_id,
+        "raider_name": req.raider_name,
+        "message": message,
+        "countdown": countdown,
+    });
+
+    match matrix.send_message_content(req.room_id, content).await {
+        Ok(_) => Ok(StatusCode::OK),
+        Err(e) => {
+            tracing::error!("failed to send raid event: {}", e);
             Err(StatusCode::BAD_REQUEST)
         }
     }
