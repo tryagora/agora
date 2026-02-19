@@ -131,16 +131,20 @@ async fn get_voice_participants(
     let livekit_http = std::env::var("LIVEKIT_HTTP_URL")
         .unwrap_or_else(|_| "http://localhost:7880".to_string());
 
+    let room_name = sanitize_room_name(&params.room_name);
+
     // generate an admin token to call the livekit rest api
-    let admin_token = match make_admin_token(&api_key, &api_secret) {
-        Ok(t) => t,
+    // admin tokens need the room name in the grant according to livekit sdk
+    let admin_token = match make_admin_token(&api_key, &api_secret, &room_name) {
+        Ok(t) => {
+            tracing::debug!("generated livekit admin token (first 50 chars): {}", &t[..t.len().min(50)]);
+            t
+        }
         Err(e) => {
             tracing::error!("failed to make admin token: {}", e);
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
-
-    let room_name = sanitize_room_name(&params.room_name);
     let url = format!("{}/twirp/livekit.RoomService/ListParticipants", livekit_http);
 
     let client = reqwest::Client::new();
@@ -185,8 +189,8 @@ async fn get_voice_participants(
 }
 
 /// generate a short-lived admin jwt for livekit rest api calls.
-/// livekit requires: iss = api_key, sub = identity, video grant with roomAdmin/roomList.
-fn make_admin_token(api_key: &str, api_secret: &str) -> Result<String, jsonwebtoken::errors::Error> {
+/// livekit requires: iss = api_key, sub = identity, video grant with roomAdmin + room name.
+fn make_admin_token(api_key: &str, api_secret: &str, room_name: &str) -> Result<String, jsonwebtoken::errors::Error> {
     let exp = (std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -198,15 +202,18 @@ fn make_admin_token(api_key: &str, api_secret: &str) -> Result<String, jsonwebto
         sub: "agora-server".to_string(), // admin identity
         video: VideoGrant {
             room_join: None,
-            room: None,
+            room: Some(room_name.to_string()), // room name required even for admin
             can_publish: None,
             can_subscribe: None,
             can_publish_data: None,
             room_admin: Some(true),
-            room_list: Some(true),
+            room_list: None, // not needed when room is specified
         },
         name: None,
     };
+
+    tracing::debug!("admin token claims: api_key={}, exp={}, sub={}, room={}, roomAdmin=true", 
+        api_key, exp, claims.sub, room_name);
 
     let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256);
     let key = jsonwebtoken::EncodingKey::from_secret(api_secret.as_bytes());
