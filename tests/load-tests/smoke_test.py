@@ -37,7 +37,7 @@ async def smoke_test(api_url: str = "http://localhost:3000"):
         username = f"smoke_test_{int(time.time())}"
         try:
             async with session.post(
-                f"{api_url}/auth/register",
+                f"{api_url}/register",
                 json={"username": username, "password": "smoke123", "initial_device_display_name": "smoke"}
             ) as resp:
                 if resp.status == 200:

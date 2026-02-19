@@ -93,7 +93,7 @@ class AgoraClient:
         
     async def register(self, username: str, password: str) -> Tuple[bool, Optional[str]]:
         """Register a new user"""
-        url = f"{self.api_url}/auth/register"
+        url = f"{self.api_url}/register"
         payload = {
             "username": username,
             "password": password,
@@ -116,7 +116,7 @@ class AgoraClient:
     
     async def login(self, username: str, password: str) -> Tuple[bool, Optional[str]]:
         """Login existing user"""
-        url = f"{self.api_url}/auth/login"
+        url = f"{self.api_url}/login"
         payload = {
             "username": username,
             "password": password,

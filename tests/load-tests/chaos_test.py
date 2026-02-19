@@ -28,7 +28,7 @@ class ChaosMonkey:
         async def register_one(i: int):
             try:
                 async with self.session.post(
-                    f"{self.api_url}/auth/register",
+                    f"{self.api_url}/register",
                     json={
                         "username": f"chaos_{i}_{int(time.time()*1000)}",
                         "password": "x",
@@ -118,12 +118,12 @@ class ChaosMonkey:
         
         malformations = [
             # missing required fields
-            {"url": f"{self.api_url}/auth/register", "json": {}},
+            {"url": f"{self.api_url}/register", "json": {}},
             {"url": f"{self.api_url}/rooms/create", "json": {"access_token": "invalid"}},
             # invalid types
             {"url": f"{self.api_url}/rooms/create", "json": {"access_token": 123, "name": None}},
             # empty strings
-            {"url": f"{self.api_url}/auth/register", "json": {"username": "", "password": ""}},
+            {"url": f"{self.api_url}/register", "json": {"username": "", "password": ""}},
             # very long strings
             {"url": f"{self.api_url}/rooms/create", "json": {"access_token": "x"*10000, "name": "test"}},
         ]

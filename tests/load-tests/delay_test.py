@@ -322,7 +322,7 @@ class DelayTester:
         username = f"{prefix}_{int(time.time()*1000)}"
         try:
             async with self.session.post(
-                f"{self.api_url}/auth/register",
+                f"{self.api_url}/register",
                 json={"username": username, "password": "test123", "initial_device_display_name": "delay_test"}
             ) as resp:
                 if resp.status == 200:
