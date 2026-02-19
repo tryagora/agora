@@ -311,26 +311,9 @@ async fn create_room(
                 }
             }
 
-            // if this is a space (server), auto-create a "general" channel
-            if is_space {
-                tracing::info!("auto-creating 'general' channel for new server {}", room_id);
-                match matrix.create_room("general".to_string(), None, false).await {
-                    Ok(general_response) => {
-                        let general_channel_id = general_response.room_id;
-                        
-                        // add the general channel as a child of the space
-                        if let Err(e) = matrix.add_space_child(room_id.clone(), general_channel_id.clone()).await {
-                            tracing::warn!("failed to add general channel to space: {}", e);
-                        } else {
-                            tracing::info!("successfully created general channel: {}", general_channel_id);
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!("failed to create general channel: {}", e);
-                        // don't fail the whole request — server was created, just general channel failed
-                    }
-                }
-            }
+            // note: we do NOT auto-create a "general" channel here.
+            // the wizard (CreateServerWizard.svelte) creates all channels based on the
+            // chosen template, so auto-creating one here would produce duplicates.
 
             Ok(Json(CreateRoomResponse {
                 room_id,
