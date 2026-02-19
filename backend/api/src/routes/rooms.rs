@@ -266,7 +266,6 @@ async fn create_room(
     matrix.access_token = Some(req.access_token.clone());
 
     let parent_space_id = req.parent_space_id.clone();
-    let room_name = req.name.clone();
     let is_space = req.is_space.unwrap_or(false);
     let channel_type = req.channel_type.clone().unwrap_or_else(|| "text".to_string());
 
@@ -289,19 +288,11 @@ async fn create_room(
                 }
             }
 
-            // create a room alias so users can join by name
-            // normalize the name: lowercase, replace spaces with dashes, remove special chars
-            let alias_localpart = room_name
-                .to_lowercase()
-                .replace(' ', "-")
-                .replace(|c: char| !c.is_alphanumeric() && c != '-' && c != '_', "");
-            if !alias_localpart.is_empty() {
-                let alias = format!("#{alias_localpart}:localhost");
-                if let Err(e) = matrix.create_room_alias(alias, room_id.clone()).await {
-                    tracing::warn!("failed to create room alias: {}", e);
-                    // don't fail — room was created, just the alias failed
-                }
-            }
+            // note: we do NOT create a room alias here.
+            // channels are discovered via the space hierarchy (m.space.child), not by alias.
+            // aliases are only set for servers via the vanity slug in /servers/meta.
+            // creating aliases by name (e.g. #general:localhost) causes collisions when
+            // multiple servers have channels with the same name.
 
             // if this room has a parent space, add it as a space child
             if let Some(space_id) = parent_space_id.clone() {
