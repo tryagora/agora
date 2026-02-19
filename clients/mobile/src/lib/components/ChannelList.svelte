@@ -330,6 +330,27 @@
 		return () => clearInterval(interval);
 	});
 
+	// immediate update when disconnecting from voice — clear the participant list
+	// so the UI updates instantly instead of waiting for next poll
+	$effect(() => {
+		if (!activeVoiceChannelId) {
+			// user disconnected — clear their entry from voiceParticipants
+			const updated = new Map<string, string[]>(voiceParticipants);
+			// find and clear the channel they were just in (if any had userId in it)
+			for (const [roomId, participants] of updated) {
+				if (participants.includes(userId)) {
+					const filtered = participants.filter(p => p !== userId);
+					if (filtered.length === 0) {
+						updated.delete(roomId);
+					} else {
+						updated.set(roomId, filtered);
+					}
+				}
+			}
+			voiceParticipants = updated;
+		}
+	});
+
 	function isVoiceChannel(channel: Channel): boolean {
 		return channel.channel_type === 'voice';
 	}
