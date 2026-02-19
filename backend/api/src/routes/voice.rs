@@ -47,26 +47,31 @@ struct LiveKitClaims {
     // standard jwt fields
     exp: usize,
     iss: String,
-    // livekit-specific: room name the token grants access to
-    #[serde(rename = "jti")]
-    jti: String,
+    sub: String, // participant identity (required by livekit)
     // livekit video grant
     video: VideoGrant,
     // livekit metadata (display name etc)
+    #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct VideoGrant {
-    #[serde(rename = "roomJoin")]
-    room_join: bool,
-    room: String,
-    #[serde(rename = "canPublish")]
-    can_publish: bool,
-    #[serde(rename = "canSubscribe")]
-    can_subscribe: bool,
-    #[serde(rename = "canPublishData")]
-    can_publish_data: bool,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "roomJoin")]
+    room_join: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    room: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "canPublish")]
+    can_publish: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "canSubscribe")]
+    can_subscribe: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "canPublishData")]
+    can_publish_data: Option<bool>,
+    // admin grants
+    #[serde(skip_serializing_if = "Option::is_none", rename = "roomAdmin")]
+    room_admin: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "roomList")]
+    room_list: Option<bool>,
 }
 
 async fn get_voice_token(
@@ -91,14 +96,15 @@ async fn get_voice_token(
     let claims = LiveKitClaims {
         exp,
         iss: api_key.clone(),
-        // jti is the participant identity (their matrix user_id)
-        jti: req.user_id.clone(),
+        sub: req.user_id.clone(), // participant identity
         video: VideoGrant {
-            room_join: true,
-            room: room_name.clone(),
-            can_publish: true,
-            can_subscribe: true,
-            can_publish_data: true,
+            room_join: Some(true),
+            room: Some(room_name.clone()),
+            can_publish: Some(true),
+            can_subscribe: Some(true),
+            can_publish_data: Some(true),
+            room_admin: None,
+            room_list: None,
         },
         name: req.display_name,
     };
@@ -180,22 +186,27 @@ async fn get_voice_participants(
 
 /// generate a short-lived admin jwt for livekit rest api calls.
 /// livekit requires: iss = api_key, sub = identity, video grant with roomAdmin/roomList.
-/// the `sub` field is the caller identity — livekit rejects tokens without it (401).
 fn make_admin_token(api_key: &str, api_secret: &str) -> Result<String, jsonwebtoken::errors::Error> {
     let exp = (std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() + 60) as usize; // 1 minute is enough for a rest call
 
-    let claims = serde_json::json!({
-        "exp": exp,
-        "iss": api_key,
-        "sub": "agora-server",   // required by livekit — identity of the caller
-        "video": {
-            "roomList": true,
-            "roomAdmin": true
-        }
-    });
+    let claims = LiveKitClaims {
+        exp,
+        iss: api_key.to_string(),
+        sub: "agora-server".to_string(), // admin identity
+        video: VideoGrant {
+            room_join: None,
+            room: None,
+            can_publish: None,
+            can_subscribe: None,
+            can_publish_data: None,
+            room_admin: Some(true),
+            room_list: Some(true),
+        },
+        name: None,
+    };
 
     let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256);
     let key = jsonwebtoken::EncodingKey::from_secret(api_secret.as_bytes());
