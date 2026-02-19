@@ -56,6 +56,12 @@
 	// maps room_id → list of participant identities currently in voice
 	let voiceParticipants = $state<Map<string, string[]>>(new Map());
 
+	// circuit-breaker: maps room_id → consecutive failure count.
+	// once a channel hits 5 consecutive failures we stop polling it until
+	// the server changes (which resets the counter via loadChannels).
+	const voicePollFailures = new Map<string, number>();
+	const VOICE_POLL_MAX_FAILURES = 5;
+
 	const API_URL = 'http://localhost:3000';
 
 	async function loadChannels() {
@@ -63,8 +69,11 @@
 			channels = [];
 			categories = [];
 			uncategorizedChannels = [];
+			voicePollFailures.clear();
 			return;
 		}
+		// reset circuit-breaker when switching servers
+		voicePollFailures.clear();
 
 		try {
 			loading = true;
@@ -263,7 +272,9 @@
 		loadChannels();
 	});
 
-	// poll voice participants every 5s for all voice channels in the current server
+	// poll voice participants every 5s for all voice channels in the current server.
+	// circuit-breaker: skip channels with too many consecutive failures so we don't
+	// hammer livekit when it returns 401 (jwt issue) or isn't running.
 	async function pollVoiceParticipants() {
 		const allVoiceChannels: Channel[] = [
 			...uncategorizedChannels.filter(c => c.channel_type === 'voice'),
@@ -273,15 +284,24 @@
 
 		const updated = new Map<string, string[]>(voiceParticipants);
 		await Promise.all(allVoiceChannels.map(async (ch) => {
+			// skip channels that have failed too many times consecutively
+			if ((voicePollFailures.get(ch.room_id) ?? 0) >= VOICE_POLL_MAX_FAILURES) return;
+
 			try {
 				const params = new URLSearchParams({ room_name: ch.room_id });
 				const res = await fetch(`${API_URL}/voice/participants?${params}`);
 				if (res.ok) {
 					const data = await res.json();
 					updated.set(ch.room_id, data.participants || []);
+					// success — reset failure counter
+					voicePollFailures.set(ch.room_id, 0);
+				} else {
+					// non-ok response (backend itself failed) — count as failure
+					voicePollFailures.set(ch.room_id, (voicePollFailures.get(ch.room_id) ?? 0) + 1);
 				}
 			} catch {
-				// ignore — livekit might not be running
+				// network error — count as failure
+				voicePollFailures.set(ch.room_id, (voicePollFailures.get(ch.room_id) ?? 0) + 1);
 			}
 		}));
 		voiceParticipants = updated;

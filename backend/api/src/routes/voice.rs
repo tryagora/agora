@@ -158,11 +158,16 @@ async fn get_voice_participants(
             Ok(Json(VoiceParticipantsResponse { participants }))
         }
         Ok(r) => {
-            // 404 means the room doesn't exist yet (no one joined) — return empty list
-            if r.status().as_u16() == 404 {
+            let status = r.status().as_u16();
+            // 404 = room doesn't exist yet (no one joined) — normal, return empty
+            // 401 = bad jwt or livekit just restarted — log at debug, not warn
+            if status == 404 || status == 401 {
+                if status == 401 {
+                    tracing::debug!("livekit participants 401 — jwt may be stale or livekit restarted");
+                }
                 return Ok(Json(VoiceParticipantsResponse { participants: vec![] }));
             }
-            tracing::warn!("livekit list participants returned {}", r.status());
+            tracing::warn!("livekit list participants returned unexpected {}", status);
             Ok(Json(VoiceParticipantsResponse { participants: vec![] }))
         }
         Err(e) => {
@@ -173,18 +178,19 @@ async fn get_voice_participants(
     }
 }
 
-/// generate a short-lived admin jwt for livekit rest api calls
+/// generate a short-lived admin jwt for livekit rest api calls.
+/// livekit requires: iss = api_key, sub = identity, video grant with roomAdmin/roomList.
+/// the `sub` field is the caller identity — livekit rejects tokens without it (401).
 fn make_admin_token(api_key: &str, api_secret: &str) -> Result<String, jsonwebtoken::errors::Error> {
     let exp = (std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() + 60) as usize; // 1 minute is enough for a rest call
 
-    // admin token: no room restriction, roomList + roomAdmin grants
     let claims = serde_json::json!({
         "exp": exp,
         "iss": api_key,
-        "jti": "admin",
+        "sub": "agora-server",   // required by livekit — identity of the caller
         "video": {
             "roomList": true,
             "roomAdmin": true
