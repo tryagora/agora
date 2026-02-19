@@ -272,18 +272,13 @@
 		loadChannels();
 	});
 
-	// poll voice participants every 5s for all voice channels in the current server.
-	// circuit-breaker: skip channels with too many consecutive failures so we don't
-	// hammer livekit when it returns 401 (jwt issue) or isn't running.
-	async function pollVoiceParticipants() {
-		const allVoiceChannels: Channel[] = [
-			...uncategorizedChannels.filter(c => c.channel_type === 'voice'),
-			...categories.flatMap(cat => cat.children.filter(c => c.channel_type === 'voice')),
-		];
-		if (allVoiceChannels.length === 0) return;
+	// poll voice participants for specific channels.
+	// circuit-breaker: skip channels with too many consecutive failures.
+	async function pollVoiceParticipants(channelsToPoll: Channel[]) {
+		if (channelsToPoll.length === 0) return;
 
 		const updated = new Map<string, string[]>(voiceParticipants);
-		await Promise.all(allVoiceChannels.map(async (ch) => {
+		await Promise.all(channelsToPoll.map(async (ch) => {
 			// skip channels that have failed too many times consecutively
 			if ((voicePollFailures.get(ch.room_id) ?? 0) >= VOICE_POLL_MAX_FAILURES) return;
 
@@ -296,7 +291,7 @@
 					// success — reset failure counter
 					voicePollFailures.set(ch.room_id, 0);
 				} else {
-					// non-ok response (backend itself failed) — count as failure
+					// non-ok response — count as failure
 					voicePollFailures.set(ch.room_id, (voicePollFailures.get(ch.room_id) ?? 0) + 1);
 				}
 			} catch {
@@ -307,11 +302,31 @@
 		voiceParticipants = updated;
 	}
 
+	// voice channel polling — only poll channels that have participants OR
+	// the user is currently connected to. this prevents spamming livekit when
+	// all voice channels are empty (the common case).
 	$effect(() => {
-		// only poll when we have channels loaded
-		const _channels = uncategorizedChannels.length + categories.length;
-		pollVoiceParticipants();
-		const interval = setInterval(pollVoiceParticipants, 5000);
+		const interval = setInterval(() => {
+			// figure out which voice channels to poll:
+			// 1. the channel user is currently connected to (activeVoiceChannelId)
+			// 2. any channel that had participants on the last poll (voiceParticipants map)
+			const allVoiceChannels: Channel[] = [
+				...uncategorizedChannels.filter(c => c.channel_type === 'voice'),
+				...categories.flatMap(cat => cat.children.filter(c => c.channel_type === 'voice')),
+			];
+
+			// channels to poll: active one + any with known participants
+			const channelsToPoll = allVoiceChannels.filter(ch => {
+				if (ch.room_id === activeVoiceChannelId) return true;
+				const participants = voiceParticipants.get(ch.room_id);
+				return participants && participants.length > 0;
+			});
+
+			if (channelsToPoll.length > 0) {
+				pollVoiceParticipants(channelsToPoll);
+			}
+		}, 10000); // 10 seconds is plenty for participant updates
+
 		return () => clearInterval(interval);
 	});
 

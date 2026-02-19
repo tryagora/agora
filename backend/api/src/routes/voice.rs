@@ -134,12 +134,8 @@ async fn get_voice_participants(
     let room_name = sanitize_room_name(&params.room_name);
 
     // generate an admin token to call the livekit rest api
-    // admin tokens need the room name in the grant according to livekit sdk
     let admin_token = match make_admin_token(&api_key, &api_secret, &room_name) {
-        Ok(t) => {
-            tracing::debug!("generated livekit admin token (first 50 chars): {}", &t[..t.len().min(50)]);
-            t
-        }
+        Ok(t) => t,
         Err(e) => {
             tracing::error!("failed to make admin token: {}", e);
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
@@ -211,9 +207,6 @@ fn make_admin_token(api_key: &str, api_secret: &str, room_name: &str) -> Result<
         },
         name: None,
     };
-
-    tracing::debug!("admin token claims: api_key={}, exp={}, sub={}, room={}, roomAdmin=true", 
-        api_key, exp, claims.sub, room_name);
 
     let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256);
     let key = jsonwebtoken::EncodingKey::from_secret(api_secret.as_bytes());
