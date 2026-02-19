@@ -275,8 +275,9 @@ async fn create_room(
             let room_id = response.room_id.clone();
 
             // store the channel type as a Matrix state event so all clients can read it
-            // only makes sense for actual channels (not spaces/servers)
-            if !is_space && channel_type != "text" {
+            // store for all non-space channels (text, voice, forum) so the frontend
+            // can reliably distinguish them without falling back to defaults
+            if !is_space {
                 let content = serde_json::json!({ "type": channel_type });
                 if let Err(e) = matrix.send_state_event(
                     room_id.clone(),

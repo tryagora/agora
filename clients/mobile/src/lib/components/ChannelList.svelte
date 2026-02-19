@@ -26,6 +26,7 @@
 		selectedChannelId: string | null;
 		onSelectChannel: (channelId: string, channelName?: string) => void;
 		onSelectVoiceChannel?: (channelId: string, channelName?: string) => void;
+		onSelectForumChannel?: (channelId: string, channelName?: string) => void;
 		isAdmin?: boolean;
 		userId?: string;
 		apiUrl?: string;
@@ -36,7 +37,7 @@
 		onDisconnectVoice?: () => void;
 	}
 
-	let { accessToken, serverId, selectedChannelId, onSelectChannel, onSelectVoiceChannel, isAdmin = false, userId = '', apiUrl = 'http://localhost:3000', onOpenSettings, activeVoiceChannelId = null, activeVoiceChannelName = null, onDisconnectVoice }: Props = $props();
+	let { accessToken, serverId, selectedChannelId, onSelectChannel, onSelectVoiceChannel, onSelectForumChannel, isAdmin = false, userId = '', apiUrl = 'http://localhost:3000', onOpenSettings, activeVoiceChannelId = null, activeVoiceChannelName = null, onDisconnectVoice }: Props = $props();
 
 	let channels = $state<Channel[]>([]);
 	let categories = $state<Category[]>([]);
@@ -47,7 +48,7 @@
 	let showCreateCategoryDialog = $state(false);
 	let showDeleteConfirm = $state(false);
 	let newChannelName = $state('');
-	let newChannelType = $state<'text' | 'voice'>('text');
+	let newChannelType = $state<'text' | 'voice' | 'forum'>('text');
 	let newCategoryName = $state('');
 	let channelToDelete = $state<Channel | null>(null);
 	let selectedCategoryId = $state<string | null>(null);
@@ -242,9 +243,10 @@
 	}
 
 	function handleChannelClick(channel: Channel) {
-		const isVoice = channel.channel_type === 'voice';
-		if (isVoice && onSelectVoiceChannel) {
+		if (channel.channel_type === 'voice' && onSelectVoiceChannel) {
 			onSelectVoiceChannel(channel.room_id, channel.name || undefined);
+		} else if (channel.channel_type === 'forum' && onSelectForumChannel) {
+			onSelectForumChannel(channel.room_id, channel.name || undefined);
 		} else {
 			onSelectChannel(channel.room_id, channel.name || undefined);
 		}
@@ -295,6 +297,10 @@
 
 	function isVoiceChannel(channel: Channel): boolean {
 		return channel.channel_type === 'voice';
+	}
+
+	function isForumChannel(channel: Channel): boolean {
+		return channel.channel_type === 'forum';
 	}
 </script>
 
@@ -364,16 +370,21 @@
 											class:text-card-foreground={selectedChannelId === channel.room_id}
 											onclick={() => handleChannelClick(channel)}
 										>
-											{#if isVoiceChannel(channel)}
-												<!-- speaker icon for voice channels -->
-												<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M12 6v12M9.172 9.172a4 4 0 105.656 5.656" />
-												</svg>
-											{:else}
-												<span class="text-muted-foreground text-xs font-mono">#</span>
-											{/if}
-											<span class="truncate">{channel.name || 'unnamed'}</span>
-											{#if isVoiceChannel(channel) && (voiceParticipants.get(channel.room_id) ?? []).length > 0}
+									{#if isVoiceChannel(channel)}
+											<!-- speaker icon for voice channels -->
+											<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M12 6v12M9.172 9.172a4 4 0 105.656 5.656" />
+											</svg>
+										{:else if isForumChannel(channel)}
+											<!-- forum / post icon -->
+											<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+											</svg>
+										{:else}
+											<span class="text-muted-foreground text-xs font-mono">#</span>
+										{/if}
+										<span class="truncate">{channel.name || 'unnamed'}</span>
+										{#if isVoiceChannel(channel) && (voiceParticipants.get(channel.room_id) ?? []).length > 0}
 												<span class="ml-auto text-xs text-green-500 flex-shrink-0">{(voiceParticipants.get(channel.room_id) ?? []).length}</span>
 											{/if}
 										</button>
@@ -432,15 +443,19 @@
 									class:text-card-foreground={selectedChannelId === channel.room_id}
 									onclick={() => handleChannelClick(channel)}
 								>
-									{#if isVoiceChannel(channel)}
-										<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M12 6v12M9.172 9.172a4 4 0 105.656 5.656" />
-										</svg>
-									{:else}
-										<span class="text-muted-foreground text-xs font-mono">#</span>
-									{/if}
-									<span class="truncate">{channel.name || 'unnamed'}</span>
-									{#if isVoiceChannel(channel) && (voiceParticipants.get(channel.room_id) ?? []).length > 0}
+								{#if isVoiceChannel(channel)}
+									<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M12 6v12M9.172 9.172a4 4 0 105.656 5.656" />
+									</svg>
+								{:else if isForumChannel(channel)}
+									<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+									</svg>
+								{:else}
+									<span class="text-muted-foreground text-xs font-mono">#</span>
+								{/if}
+								<span class="truncate">{channel.name || 'unnamed'}</span>
+								{#if isVoiceChannel(channel) && (voiceParticipants.get(channel.room_id) ?? []).length > 0}
 										<span class="ml-auto text-xs text-green-500 flex-shrink-0">{(voiceParticipants.get(channel.room_id) ?? []).length}</span>
 									{/if}
 								</button>
@@ -498,7 +513,7 @@
 				{#if error}
 					<div class="text-destructive text-sm mb-3">{error}</div>
 				{/if}
-				<!-- channel type selector -->
+			<!-- channel type selector -->
 				<div class="mb-4 flex gap-2">
 					<button
 						class={`flex-1 flex flex-col items-center gap-1 p-3 rounded border-2 transition-colors ${newChannelType === 'text' ? 'border-primary bg-primary/5' : 'border-border'}`}
@@ -515,6 +530,15 @@
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M12 6v12M9.172 9.172a4 4 0 105.656 5.656" />
 						</svg>
 						<span class="text-xs text-card-foreground">voice</span>
+					</button>
+					<button
+						class={`flex-1 flex flex-col items-center gap-1 p-3 rounded border-2 transition-colors ${newChannelType === 'forum' ? 'border-primary bg-primary/5' : 'border-border'}`}
+						onclick={() => newChannelType = 'forum'}
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+						</svg>
+						<span class="text-xs text-card-foreground">forum</span>
 					</button>
 				</div>
 				<Input

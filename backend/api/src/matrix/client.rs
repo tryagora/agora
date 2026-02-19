@@ -1035,7 +1035,7 @@ pub struct PowerLevelsRequest {
     pub invite: Option<i64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PowerLevelsResponse {
     pub users: Option<std::collections::HashMap<String, i64>>,
     pub users_default: Option<i64>,

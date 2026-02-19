@@ -4,7 +4,9 @@
 	import DmList from './DmList.svelte';
 	import FriendsList from './FriendsList.svelte';
 	import MemberList from './MemberList.svelte';
-	import ServerManage from './ServerManage.svelte';
+	import ServerSettings from './ServerSettings.svelte';
+	import CreateServerWizard from './CreateServerWizard.svelte';
+	import ForumChannel from './ForumChannel.svelte';
 	import SettingsModal from './SettingsModal.svelte';
 	import VoiceChannel from './VoiceChannel.svelte';
 	import IncomingCall from './IncomingCall.svelte';
@@ -44,8 +46,7 @@
 	let nextBatch = $state('');
 	let loading = $state(false);
 	let error = $state('');
-	let showCreateServerDialog = $state(false);
-	let newServerName = $state('');
+	let showCreateServerWizard = $state(false);
 	let messagesContainer: HTMLDivElement;
 	
 	// DM state
@@ -74,6 +75,9 @@
 	// voice channel state — when set, the main area shows VoiceChannel instead of chat
 	let activeVoiceChannelId = $state<string | null>(null);
 	let activeVoiceChannelName = $state<string | null>(null);
+	// forum channel state — when set, the main area shows ForumChannel
+	let activeForumChannelId = $state<string | null>(null);
+	let activeForumChannelName = $state<string | null>(null);
 	// dm call state — inline call panel above messages
 	let showDmCall = $state(false);
 
@@ -254,30 +258,11 @@
 		}
 	}
 
-	async function handleCreateServer() {
-		if (!newServerName.trim()) return;
-		
-		try {
-			const response = await fetch(`${API_URL}/rooms/create`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					access_token: accessToken,
-					name: newServerName,
-					is_space: true
-				})
-			});
-			
-			if (response.ok) {
-				showCreateServerDialog = false;
-				newServerName = '';
-				serverRefreshTrigger++; // trigger server list reload
-			} else {
-				error = 'failed to create server';
-			}
-		} catch (e) {
-			error = 'network error';
-		}
+	function handleServerCreated(serverId: string, serverName: string) {
+		showCreateServerWizard = false;
+		serverRefreshTrigger++;
+		// auto-select the new server
+		handleSelectServer(serverId, serverName);
 	}
 
 
@@ -288,9 +273,11 @@
 		// reset hype train when switching channels
 		channelMessageTimestamps = [];
 		hypeActive = false;
-		// if a voice channel is active from a previous selection, clear it
+		// clear any active voice/forum channel
 		activeVoiceChannelId = null;
 		activeVoiceChannelName = null;
+		activeForumChannelId = null;
+		activeForumChannelName = null;
 		showDmCall = false;
 		if (!selectedServerId) {
 			// selecting a dm — stay in DM mode but leave friends page
@@ -304,9 +291,23 @@
 	function handleSelectVoiceChannel(channelId: string, channelName?: string) {
 		activeVoiceChannelId = channelId;
 		activeVoiceChannelName = channelName || null;
-		// clear text channel selection — voice takes over the main area
+		// clear text/forum channel selection — voice takes over the main area
 		selectedChannelId = null;
 		selectedChannelName = null;
+		activeForumChannelId = null;
+		activeForumChannelName = null;
+		isDmMode = false;
+		showFriendsPage = false;
+	}
+
+	function handleSelectForumChannel(channelId: string, channelName?: string) {
+		activeForumChannelId = channelId;
+		activeForumChannelName = channelName || null;
+		// clear other channel types
+		selectedChannelId = null;
+		selectedChannelName = null;
+		activeVoiceChannelId = null;
+		activeVoiceChannelName = null;
 		isDmMode = false;
 		showFriendsPage = false;
 	}
@@ -317,6 +318,8 @@
 		selectedChannelId = null;
 		activeVoiceChannelId = null;
 		activeVoiceChannelName = null;
+		activeForumChannelId = null;
+		activeForumChannelName = null;
 		showDmCall = false;
 		isDmMode = !serverId; // DM mode when no server selected
 		showFriendsPage = !serverId; // show friends page when going home
@@ -629,7 +632,7 @@
 		{accessToken}
 		{selectedServerId}
 		onSelectServer={handleSelectServer}
-		onCreateServer={() => showCreateServerDialog = true}
+		onCreateServer={() => showCreateServerWizard = true}
 		onJoinServer={() => {}}
 		onManageServer={() => showServerManage = true}
 		onLeaveServer={handleLeaveServer}
@@ -656,6 +659,7 @@
 			{selectedChannelId}
 			onSelectChannel={handleSelectChannel}
 			onSelectVoiceChannel={handleSelectVoiceChannel}
+			onSelectForumChannel={handleSelectForumChannel}
 			{isAdmin}
 			{userId}
 			{apiUrl}
@@ -668,7 +672,18 @@
 
 	<!-- chat area + member list -->
 	<div class="flex-1 flex min-h-0">
-	{#if activeVoiceChannelId}
+	{#if activeForumChannelId}
+		<!-- forum channel fills the entire main area -->
+		<div class="flex-1 flex flex-col min-h-0 bg-background">
+			<ForumChannel
+				forumChannelId={activeForumChannelId}
+				forumChannelName={activeForumChannelName || 'forum'}
+				{userId}
+				{accessToken}
+				{apiUrl}
+			/>
+		</div>
+	{:else if activeVoiceChannelId}
 		<!-- voice channel fills the entire main area -->
 		<div class="flex-1 flex flex-col min-h-0 bg-background">
 			<div class="h-14 border-b border-border flex items-center justify-between px-4 bg-card">
@@ -893,30 +908,13 @@
 		/>
 	{/if}
 
-	<!-- create server dialog -->
-	{#if showCreateServerDialog}
-		<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-			<div class="bg-card p-6 rounded-lg w-80">
-				<h3 class="text-lg font-semibold mb-4 text-card-foreground">create server</h3>
-				{#if error}
-					<div class="text-destructive text-sm mb-3">{error}</div>
-				{/if}
-				<Input
-					type="text"
-					placeholder="server name"
-					bind:value={newServerName}
-					class="mb-4 bg-muted border-input"
-				/>
-				<div class="flex gap-2">
-					<Button variant="outline" class="flex-1" onclick={() => showCreateServerDialog = false}>
-						cancel
-					</Button>
-					<Button class="flex-1" onclick={handleCreateServer} disabled={!newServerName.trim()}>
-						create
-					</Button>
-				</div>
-			</div>
-		</div>
+	<!-- create server wizard -->
+	{#if showCreateServerWizard}
+		<CreateServerWizard
+			{accessToken}
+			onCreated={handleServerCreated}
+			onClose={() => showCreateServerWizard = false}
+		/>
 	{/if}
 
 	<!-- create DM dialog -->
@@ -945,15 +943,16 @@
 		</div>
 	{/if}
 
-	<!-- server management dialog -->
-	{#if showServerManage}
-		<ServerManage
+	<!-- server settings dialog -->
+	{#if showServerManage && selectedServerId}
+		<ServerSettings
 			serverId={selectedServerId}
 			serverName={selectedServerName}
 			{accessToken}
 			{userId}
 			onClose={() => showServerManage = false}
 			onLeaveServer={handleLeaveServer}
+			onNameChanged={(name) => { selectedServerName = name; }}
 		/>
 	{/if}
 
