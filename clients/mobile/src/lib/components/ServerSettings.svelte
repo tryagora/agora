@@ -58,6 +58,41 @@
 	let showLeaveConfirm = $state(false);
 	let leavingServer = $state(false);
 	let dangerError = $state('');
+	// true if the current user is the server owner (power level 100)
+	let isOwner = $state(false);
+
+	async function checkOwner() {
+		try {
+			const res = await fetch(`${API_URL}/rooms/permissions?access_token=${accessToken}&room_id=${encodeURIComponent(serverId)}`);
+			if (res.ok) {
+				const data = await res.json();
+				const myPower = data.users?.[userId] ?? data.users_default ?? 0;
+				isOwner = myPower >= 100;
+			}
+		} catch { /* non-fatal */ }
+	}
+
+	async function handleDeleteServer() {
+		leavingServer = true;
+		dangerError = '';
+		try {
+			const res = await fetch(`${API_URL}/rooms/delete_server`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ access_token: accessToken, room_id: serverId, user_id: userId }),
+			});
+			if (res.ok) {
+				onLeaveServer?.();
+				onClose();
+			} else {
+				dangerError = 'failed to delete server';
+			}
+		} catch {
+			dangerError = 'network error';
+		} finally {
+			leavingServer = false;
+		}
+	}
 
 	async function loadMeta() {
 		try {
@@ -167,6 +202,11 @@
 		if (activeTab === 'invites') loadInvite();
 	});
 
+	// check owner status once on mount
+	$effect(() => {
+		checkOwner();
+	});
+
 	const TAB_LABELS: [Tab, string][] = [
 		['overview', 'overview'],
 		['roles', 'roles'],
@@ -206,7 +246,7 @@
 						class="w-full text-left px-3 py-2 rounded text-sm text-destructive hover:bg-destructive/10 transition-colors"
 						onclick={() => showLeaveConfirm = true}
 					>
-						leave server
+						{isOwner ? 'delete server' : 'leave server'}
 					</button>
 					<button
 						class="w-full text-left px-3 py-2 rounded text-sm text-muted-foreground hover:bg-muted transition-colors"
@@ -359,12 +399,19 @@
 		</div>
 	</div>
 
-	<!-- leave confirmation -->
+	<!-- leave / delete confirmation -->
 	{#if showLeaveConfirm}
 		<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
 			<div class="bg-card rounded-lg p-6 w-80 space-y-4">
-				<h3 class="font-semibold text-card-foreground">leave server?</h3>
-				<p class="text-muted-foreground text-sm">are you sure? you can rejoin later with an invite.</p>
+				{#if isOwner}
+					<h3 class="font-semibold text-card-foreground">delete server?</h3>
+					<p class="text-muted-foreground text-sm">
+						this will kick all members and permanently destroy the server. this cannot be undone.
+					</p>
+				{:else}
+					<h3 class="font-semibold text-card-foreground">leave server?</h3>
+					<p class="text-muted-foreground text-sm">are you sure? you can rejoin later with an invite.</p>
+				{/if}
 				{#if dangerError}
 					<div class="text-destructive text-sm">{dangerError}</div>
 				{/if}
@@ -372,8 +419,12 @@
 					<Button variant="outline" class="flex-1" onclick={() => showLeaveConfirm = false} disabled={leavingServer}>
 						cancel
 					</Button>
-					<Button variant="destructive" class="flex-1" onclick={handleLeaveServer} disabled={leavingServer}>
-						{leavingServer ? 'leaving...' : 'leave'}
+					<Button variant="destructive" class="flex-1" onclick={isOwner ? handleDeleteServer : handleLeaveServer} disabled={leavingServer}>
+						{#if leavingServer}
+							{isOwner ? 'deleting...' : 'leaving...'}
+						{:else}
+							{isOwner ? 'delete server' : 'leave'}
+						{/if}
 					</Button>
 				</div>
 			</div>

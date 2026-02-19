@@ -16,6 +16,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/rooms/join", post(join_room))
         .route("/rooms/leave", post(leave_room))
         .route("/rooms/delete", post(delete_room))
+        .route("/rooms/delete_server", post(delete_server))
         .route("/rooms/members", get(get_room_members))
         .route("/rooms/invite", post(invite_user))
         .route("/rooms/send", post(send_message))
@@ -148,6 +149,8 @@ pub struct SpaceChildrenResponse {
 pub struct LeaveRoomRequest {
     pub access_token: String,
     pub room_id: String,
+    /// only needed for delete_server — the owner's matrix user id
+    pub user_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -562,7 +565,10 @@ async fn leave_room(
     let mut matrix = MatrixClient::new(state.homeserver_url.clone());
     matrix.access_token = Some(req.access_token);
 
-    // if this is a space, leave all child rooms first so they don't linger in joined_rooms
+    // if this is a space, recursively leave all children (categories and their channels)
+    // so nothing lingers in joined_rooms after the server is left.
+    // categories are sub-spaces with their own m.space.child entries — we must
+    // recurse into them or channels inside categories will never be left.
     if let Ok(state_events) = matrix.get_room_state(req.room_id.clone()).await {
         let is_space = state_events.iter().any(|e| {
             e.event_type == "m.room.create"
@@ -578,30 +584,44 @@ async fn leave_room(
                 .collect();
 
             for child_id in child_ids {
-                // ignore errors — child may already be left or never joined
-                if let Err(e) = matrix.leave_room(child_id.clone()).await {
-                    tracing::warn!("could not leave child room {} (may already be left): {}", child_id, e);
+                // check if this child is itself a sub-space (category) and recurse
+                if let Ok(child_state) = matrix.get_room_state(child_id.clone()).await {
+                    let child_is_space = child_state.iter().any(|e| {
+                        e.event_type == "m.room.create"
+                            && e.content.get("type").and_then(|v| v.as_str()) == Some("m.space")
+                    });
+
+                    if child_is_space {
+                        // leave and forget all grandchildren (channels inside this category)
+                        let grandchild_ids: Vec<String> = child_state
+                            .iter()
+                            .filter(|e| e.event_type == "m.space.child")
+                            .filter_map(|e| e.state_key.clone())
+                            .filter(|k| !k.is_empty())
+                            .collect();
+
+                        for gc_id in grandchild_ids {
+                            let _ = matrix.leave_room(gc_id.clone()).await;
+                            let _ = matrix.forget_room(gc_id).await;
+                        }
+                    }
                 }
-                // forget so it doesn't appear in joined_rooms or DM list
-                if let Err(e) = matrix.forget_room(child_id.clone()).await {
-                    tracing::warn!("could not forget child room {}: {}", child_id, e);
-                }
+
+                // leave and forget the child (channel or category) itself
+                let _ = matrix.leave_room(child_id.clone()).await;
+                let _ = matrix.forget_room(child_id).await;
             }
         }
     }
 
-    // leave the room itself — treat "not a member" (M_FORBIDDEN) as success
+    // leave the space itself — treat "not a member" as success
     match matrix.leave_room(req.room_id.clone()).await {
         Ok(_) => {
-            // forget so it's fully removed from the joined list
-            if let Err(e) = matrix.forget_room(req.room_id).await {
-                tracing::warn!("could not forget room after leaving: {}", e);
-            }
+            let _ = matrix.forget_room(req.room_id).await;
             Ok(StatusCode::OK)
         }
         Err(e) => {
             let err_str = e.to_string();
-            // conduit returns M_FORBIDDEN when the user isn't a member — treat as success
             if err_str.contains("M_FORBIDDEN") || err_str.contains("not a member") || err_str.contains("not invited or joined") {
                 tracing::info!("user already not a member of room, treating leave as success");
                 let _ = matrix.forget_room(req.room_id).await;
@@ -639,6 +659,73 @@ async fn delete_room(
             Err(StatusCode::BAD_REQUEST)
         }
     }
+}
+
+/// delete_server — owner-only: kick all members from every room in the server,
+/// then leave and forget everything. makes the server effectively disappear for everyone.
+/// matrix has no true room deletion, but kicking all members achieves the same result
+/// on a single-homeserver deployment.
+async fn delete_server(
+    state: State<Arc<AppState>>,
+    Json(req): Json<LeaveRoomRequest>,
+) -> Result<StatusCode, StatusCode> {
+    let mut matrix = MatrixClient::new(state.homeserver_url.clone());
+    matrix.access_token = Some(req.access_token.clone());
+
+    // collect all room ids in the server: the space itself + all children + grandchildren
+    let mut all_room_ids: Vec<String> = vec![req.room_id.clone()];
+
+    if let Ok(space_state) = matrix.get_room_state(req.room_id.clone()).await {
+        let child_ids: Vec<String> = space_state
+            .iter()
+            .filter(|e| e.event_type == "m.space.child")
+            .filter_map(|e| e.state_key.clone())
+            .filter(|k| !k.is_empty())
+            .collect();
+
+        for child_id in &child_ids {
+            // recurse into sub-spaces (categories)
+            if let Ok(child_state) = matrix.get_room_state(child_id.clone()).await {
+                let is_sub_space = child_state.iter().any(|e| {
+                    e.event_type == "m.room.create"
+                        && e.content.get("type").and_then(|v| v.as_str()) == Some("m.space")
+                });
+                if is_sub_space {
+                    let grandchild_ids: Vec<String> = child_state
+                        .iter()
+                        .filter(|e| e.event_type == "m.space.child")
+                        .filter_map(|e| e.state_key.clone())
+                        .filter(|k| !k.is_empty())
+                        .collect();
+                    all_room_ids.extend(grandchild_ids);
+                }
+            }
+            all_room_ids.push(child_id.clone());
+        }
+    }
+
+    // for each room, kick all members except the requester, then leave + forget
+    for room_id in &all_room_ids {
+        if let Ok(members) = matrix.get_room_members(room_id.clone()).await {
+            let my_user_id = req.user_id.clone().unwrap_or_default();
+            for member in members.members {
+                if member.event_type == "m.room.member"
+                    && member.content.membership.as_deref() == Some("join")
+                    && member.state_key != my_user_id
+                {
+                    let _ = matrix.kick_user(
+                        room_id.clone(),
+                        member.state_key,
+                        Some("server deleted".to_string()),
+                    ).await;
+                }
+            }
+        }
+        let _ = matrix.leave_room(room_id.clone()).await;
+        let _ = matrix.forget_room(room_id.clone()).await;
+    }
+
+    Ok(StatusCode::OK)
 }
 
 async fn create_category(

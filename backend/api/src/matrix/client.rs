@@ -950,6 +950,38 @@ impl MatrixClient {
         }
     }
 
+    /// kick a user from a room (sets membership to "leave" on their behalf, requires power)
+    pub async fn kick_user(
+        &self,
+        room_id: String,
+        user_id: String,
+        reason: Option<String>,
+    ) -> Result<(), MatrixError> {
+        let token = self.access_token.as_ref().ok_or(MatrixError::NoSession)?;
+        let client = reqwest::Client::new();
+        let url = format!(
+            "{}/_matrix/client/r0/rooms/{}/kick",
+            self.homeserver_url,
+            encode_matrix_id(&room_id)
+        );
+        let mut body = serde_json::json!({ "user_id": user_id });
+        if let Some(r) = reason {
+            body["reason"] = serde_json::Value::String(r);
+        }
+        let response = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .json(&body)
+            .send()
+            .await?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let err = response.text().await?;
+            Err(MatrixError::ApiError(err))
+        }
+    }
+
     /// GET an arbitrary matrix url with the current access token, return parsed json body
     pub async fn get_raw(&self, url: &str) -> Result<serde_json::Value, MatrixError> {
         let token = self.access_token.as_ref().ok_or(MatrixError::NoSession)?;
