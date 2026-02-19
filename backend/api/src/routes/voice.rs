@@ -13,6 +13,8 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/voice/token", post(get_voice_token))
         .route("/voice/participants", get(get_voice_participants))
         .route("/voice/call", post(send_call_event))
+        .route("/voice/vibe", get(get_vibe))
+        .route("/voice/vibe", post(set_vibe))
 }
 
 #[derive(Debug, Deserialize)]
@@ -236,6 +238,101 @@ async fn send_call_event(
             Err(StatusCode::BAD_REQUEST)
         }
     }
+}
+
+// ── vibe rooms ────────────────────────────────────────────────────────────────
+// vibe is stored as a matrix state event (agora.vibe) on the voice channel room.
+// any participant can set it; everyone polling /voice/vibe sees the change.
+
+#[derive(Debug, Deserialize)]
+pub struct VibeQuery {
+    pub access_token: String,
+    pub room_id: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct VibeResponse {
+    pub vibe: String, // "none" | "rain" | "lofi" | "campfire" | "space"
+    pub set_by: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetVibeRequest {
+    pub access_token: String,
+    pub room_id: String,
+    /// the vibe id to set — must be one of: none, rain, lofi, campfire, space
+    pub vibe: String,
+    pub user_id: String,
+}
+
+async fn get_vibe(
+    state: State<Arc<AppState>>,
+    Query(params): Query<VibeQuery>,
+) -> Result<Json<VibeResponse>, StatusCode> {
+    use crate::matrix::client::MatrixClient;
+
+    let mut matrix = MatrixClient::new(state.homeserver_url.clone());
+    matrix.access_token = Some(params.access_token);
+
+    // read the agora.vibe state event from the room
+    let url = format!(
+        "{}/_matrix/client/v3/rooms/{}/state/agora.vibe/",
+        state.homeserver_url,
+        urlencoding_encode(&params.room_id)
+    );
+
+    let resp = matrix.get_raw(&url).await;
+    match resp {
+        Ok(body) => {
+            let vibe = body["vibe"].as_str().unwrap_or("none").to_string();
+            let set_by = body["set_by"].as_str().map(String::from);
+            Ok(Json(VibeResponse { vibe, set_by }))
+        }
+        Err(_) => {
+            // no vibe set yet (404 from conduit) — return none
+            Ok(Json(VibeResponse { vibe: "none".to_string(), set_by: None }))
+        }
+    }
+}
+
+async fn set_vibe(
+    state: State<Arc<AppState>>,
+    Json(req): Json<SetVibeRequest>,
+) -> Result<StatusCode, StatusCode> {
+    use crate::matrix::client::MatrixClient;
+
+    // validate vibe value server-side
+    let allowed = ["none", "rain", "lofi", "campfire", "space"];
+    if !allowed.contains(&req.vibe.as_str()) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let mut matrix = MatrixClient::new(state.homeserver_url.clone());
+    matrix.access_token = Some(req.access_token);
+
+    let content = serde_json::json!({
+        "vibe": req.vibe,
+        "set_by": req.user_id,
+    });
+
+    match matrix.send_state_event(req.room_id, "agora.vibe".to_string(), "".to_string(), content).await {
+        Ok(_) => Ok(StatusCode::OK),
+        Err(e) => {
+            tracing::error!("failed to set vibe: {}", e);
+            Err(StatusCode::BAD_REQUEST)
+        }
+    }
+}
+
+/// url-encode a matrix room id for use in a path segment
+fn urlencoding_encode(s: &str) -> String {
+    s.chars().map(|c| match c {
+        '!' => "%21".to_string(),
+        ':' => "%3A".to_string(),
+        '.' => "%2E".to_string(),
+        '#' => "%23".to_string(),
+        _ => c.to_string(),
+    }).collect()
 }
 
 /// sanitize a matrix room id into a livekit-compatible room name

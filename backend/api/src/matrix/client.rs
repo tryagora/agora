@@ -949,6 +949,24 @@ impl MatrixClient {
             Err(MatrixError::ApiError(error_text))
         }
     }
+
+    /// GET an arbitrary matrix url with the current access token, return parsed json body
+    pub async fn get_raw(&self, url: &str) -> Result<serde_json::Value, MatrixError> {
+        let token = self.access_token.as_ref().ok_or(MatrixError::NoSession)?;
+        let client = reqwest::Client::new();
+        let response = client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await?;
+        if response.status().is_success() {
+            let body = response.json::<serde_json::Value>().await?;
+            Ok(body)
+        } else {
+            let err = response.text().await?;
+            Err(MatrixError::ApiError(err))
+        }
+    }
 }
 
 // room/server response types

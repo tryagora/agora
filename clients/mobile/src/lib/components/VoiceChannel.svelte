@@ -7,6 +7,7 @@
 		Track,
 		type Participant,
 	} from 'livekit-client';
+	import VibeRoom from './VibeRoom.svelte';
 
 	interface Props {
 		roomId: string;
@@ -41,6 +42,33 @@
 	let muted = $state(false);
 	let connecting = $state(false);
 	let error = $state('');
+
+	// vibe room state — synced from matrix state every 5s
+	let currentVibe = $state('none');
+	let vibeSetBy = $state<string | undefined>(undefined);
+
+	async function pollVibe() {
+		try {
+			const params = new URLSearchParams({ access_token: accessToken, room_id: roomId });
+			const res = await fetch(`${apiUrl}/voice/vibe?${params}`);
+			if (res.ok) {
+				const data = await res.json();
+				currentVibe = data.vibe ?? 'none';
+				vibeSetBy = data.set_by ?? undefined;
+			}
+		} catch {
+			// livekit or backend unreachable — leave vibe unchanged
+		}
+	}
+
+	$effect(() => {
+		// poll vibe immediately and every 5s while connected
+		const _room = room; // reactive dependency
+		if (!_room) return;
+		pollVibe();
+		const interval = setInterval(pollVibe, 5000);
+		return () => clearInterval(interval);
+	});
 
 	function participantToInfo(p: Participant, isLocal: boolean): ParticipantInfo {
 		// check if the participant has any published audio track that is muted
@@ -232,6 +260,21 @@
 			{/each}
 		{/if}
 	</div>
+
+	<!-- vibe room picker — shown once connected -->
+	{#if room}
+		<div class="px-2 pb-2">
+			<VibeRoom
+				{roomId}
+				{accessToken}
+				{userId}
+				{apiUrl}
+				currentVibe={currentVibe}
+				setBy={vibeSetBy}
+				onVibeChange={(v) => { currentVibe = v; }}
+			/>
+		</div>
+	{/if}
 
 	<!-- controls bar -->
 	{#if room}

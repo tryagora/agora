@@ -1,10 +1,7 @@
 ---
 # agora — project status
 
-last updated: 2026-02-18 (dm call signaling + voice bar)
-
-## current focus
-full-featured discord-like chat client with friends, presence, settings, and onboarding
+last updated: 2026-02-19 (vibe rooms)
 
 ## completed
 - 2026-02-17 initialized git repository
@@ -73,6 +70,8 @@ full-featured discord-like chat client with friends, presence, settings, and onb
 - 2026-02-18 **persistent voice bar** — ChannelList.svelte shows green animated "voice connected" bar at sidebar bottom when connected to a voice channel; includes disconnect button; state flows down from Chat.svelte via activeVoiceChannelId/activeVoiceChannelName props
 - 2026-02-18 **voice participant polling** — ChannelList polls /voice/participants every 5s for all voice channels; shows participant count badge on channel row and participant name list below each voice channel with green presence dot
 - 2026-02-18 **GET /voice/participants** backend endpoint — calls LiveKit REST API with admin JWT; returns empty list gracefully if LiveKit unreachable
+
+- 2026-02-19 **vibe rooms** — one person sets a shared ambient vibe (rain/lo-fi/campfire/space/off) that all voice channel participants hear; vibe stored as agora.vibe Matrix state event; GET/POST /voice/vibe backend endpoints; VibeRoom.svelte component with Web Audio API procedural sound synthesis (no asset files); VoiceChannel.svelte polls vibe every 5s and renders VibeRoom picker; animated sound-wave status bar and active-vibe pulse animation; cross-fade between vibes; nothing like this exists in Discord, Element, or Signal
 
 ## in progress
 
