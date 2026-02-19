@@ -37,4 +37,10 @@ logs/
 .cache/
 temp/
 status.md
-status.md
+
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
